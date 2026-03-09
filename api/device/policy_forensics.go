@@ -153,28 +153,25 @@ func FetchLocalPolicy(apiClient *utils.APIClient) http.HandlerFunc {
 			func(raw json.RawMessage) []LocalPolicyEntry {
 				log.Printf("\U0001f50d Raw policer data for %s: %s", systemIP, string(raw))
 				var items []struct {
-					PolicerName  string `json:"policer-name"`
-					PolicerName2 string `json:"policerName"`
-					CIR          string `json:"cir"`
-					Burst        string `json:"bc"`
-					ExceedAction string `json:"exceed-action"`
+					Name      string      `json:"name"`
+					Rate      json.Number `json:"rate"`
+					Burst     json.Number `json:"burst"`
+					OosAction string      `json:"oos-action"`
+					Direction string      `json:"direction"`
 				}
 				json.Unmarshal(raw, &items)
 				entries := make([]LocalPolicyEntry, 0, len(items))
 				for _, it := range items {
-					name := it.PolicerName
-					if name == "" {
-						name = it.PolicerName2
-					}
-					if name == "" {
+					if it.Name == "" {
 						continue
 					}
 					entries = append(entries, LocalPolicyEntry{
-						Name:         name,
+						Name:         it.Name,
 						Type:         "policer",
-						CIR:          it.CIR,
-						Burst:        it.Burst,
-						ExceedAction: it.ExceedAction,
+						CIR:          it.Rate.String(),
+						Burst:        it.Burst.String(),
+						ExceedAction: it.OosAction,
+						Direction:    it.Direction,
 					})
 				}
 				return entries
@@ -312,20 +309,20 @@ func FetchCentralizedPolicy(apiClient *utils.APIClient) http.HandlerFunc {
 
 		for _, pol := range policyEnvelope.Data {
 			// Parse the embedded policyDefinition JSON string
+			// vManage returns siteLists as a plain string array ["uuid1", "uuid2"]
 			var def struct {
 				Assemblies []struct {
 					Type         string `json:"type"`
 					DefinitionID string `json:"definitionId"`
 					Entries      []struct {
-						SiteLists []struct {
-							Ref string `json:"ref"`
-						} `json:"siteLists"`
+						SiteLists []string `json:"siteLists"`
+						Direction string   `json:"direction"`
 					} `json:"entries"`
 				} `json:"assembly"`
 			}
 
 			if err := json.Unmarshal([]byte(pol.PolicyDefinition), &def); err != nil {
-				log.Printf("Policy definition parse error for %s: %v (raw: %.200s)", pol.PolicyName, err, pol.PolicyDefinition)
+				log.Printf("Policy definition parse error for %s: %v (raw: %.500s)", pol.PolicyName, err, pol.PolicyDefinition)
 				continue
 			}
 			log.Printf("\U0001f50d Policy %q: %d assemblies, active=%v", pol.PolicyName, len(def.Assemblies), pol.IsPolicyActivated)
@@ -335,7 +332,7 @@ func FetchCentralizedPolicy(apiClient *utils.APIClient) http.HandlerFunc {
 			for _, asm := range def.Assemblies {
 				for _, entry := range asm.Entries {
 					for _, sl := range entry.SiteLists {
-						siteListRefs[sl.Ref] = true
+						siteListRefs[sl] = true
 					}
 				}
 			}
