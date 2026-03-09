@@ -88,12 +88,57 @@ func findDevice(apiClient *utils.APIClient, systemIP string) (*deviceRecord, err
 		return nil, fmt.Errorf("failed to parse device list: %w", err)
 	}
 
+	// Debug: find the raw JSON for the matched device to inspect field names
+	var rawEnvelope struct {
+		Data []json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal(rawData, &rawEnvelope); err == nil {
+		for _, raw := range rawEnvelope.Data {
+			var peek struct {
+				SystemIP string `json:"system-ip"`
+			}
+			if json.Unmarshal(raw, &peek) == nil && peek.SystemIP == systemIP {
+				log.Printf("🔍 Raw device JSON for %s: %s", systemIP, string(raw))
+				break
+			}
+		}
+	}
+
 	for i := range envelope.Data {
 		if envelope.Data[i].SystemIP == systemIP {
+			log.Printf("🔍 Parsed device %s: Template=%q, TemplateID=%q", systemIP, envelope.Data[i].Template, envelope.Data[i].TemplateID)
 			return &envelope.Data[i], nil
 		}
 	}
 	return nil, nil // not found
+}
+
+// resolveTemplateID looks up the device template UUID from vManage by template name.
+// This is needed because /dataservice/device often returns the template name but not
+// the templateId UUID.
+func resolveTemplateID(apiClient *utils.APIClient, templateName string) (string, error) {
+	rawData, err := apiClient.Get("dataservice/template/device")
+	if err != nil {
+		return "", fmt.Errorf("failed to fetch device templates: %w", err)
+	}
+
+	var envelope struct {
+		Data []struct {
+			TemplateName string `json:"templateName"`
+			TemplateID   string `json:"templateId"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rawData, &envelope); err != nil {
+		return "", fmt.Errorf("failed to parse device templates: %w", err)
+	}
+
+	for _, t := range envelope.Data {
+		if t.TemplateName == templateName {
+			log.Printf("🔍 Resolved template name %q → ID %q", templateName, t.TemplateID)
+			return t.TemplateID, nil
+		}
+	}
+	return "", fmt.Errorf("no device template found with name %q", templateName)
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -169,17 +214,31 @@ func FetchDeviceTemplates(apiClient *utils.APIClient) http.HandlerFunc {
 				fmt.Sprintf("No device found with system-ip %s", systemIP))
 			return
 		}
-		if dev.TemplateID == "" {
+		// Resolve template ID: prefer templateId from device record,
+		// fall back to looking up by template name via /dataservice/template/device
+		templateID := dev.TemplateID
+		if templateID == "" && dev.Template != "" {
+			log.Printf("⚠️ Device %s has template name %q but no templateId — resolving by name", systemIP, dev.Template)
+			resolved, err := resolveTemplateID(apiClient, dev.Template)
+			if err != nil {
+				log.Printf("Template name resolution error for %s: %v", systemIP, err)
+				middleware.WriteError(w, http.StatusNotFound, "NO_TEMPLATE",
+					fmt.Sprintf("Device %s: could not resolve template %q", systemIP, dev.Template))
+				return
+			}
+			templateID = resolved
+		}
+		if templateID == "" {
 			middleware.WriteError(w, http.StatusNotFound, "NO_TEMPLATE",
 				fmt.Sprintf("Device %s has no attached device template", systemIP))
 			return
 		}
 
 		// Step 2: Fetch the Device Template object
-		templateEndpoint := fmt.Sprintf("dataservice/template/device/object/%s", dev.TemplateID)
+		templateEndpoint := fmt.Sprintf("dataservice/template/device/object/%s", templateID)
 		rawTemplate, err := apiClient.Get(templateEndpoint)
 		if err != nil {
-			log.Printf("Template fetch error for %s: %v", dev.TemplateID, err)
+			log.Printf("Template fetch error for %s: %v", templateID, err)
 			middleware.WriteError(w, http.StatusBadGateway, "VMANAGE_ERROR", "Failed to fetch device template from vManage")
 			return
 		}

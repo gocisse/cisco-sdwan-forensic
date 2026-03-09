@@ -1,146 +1,105 @@
 import React, { useState } from "react";
-import { useParams, useNavigate, Link } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
+import {
+  Box,
+  Card,
+  CardContent,
+  Chip,
+  Collapse,
+  Grid,
+  Paper,
+  Typography,
+  Alert,
+  IconButton,
+} from "@mui/material";
+import {
+  Inventory as PackageIcon,
+  ExpandMore as ExpandMoreIcon,
+  ChevronRight as ChevronRightIcon,
+  Circle as CircleIcon,
+} from "@mui/icons-material";
 import useApiFetch from "../hooks/useApiFetch";
 import LoadingSpinner from "../components/LoadingSpinner";
 import { useDeviceContext } from "../context/DeviceContext";
 import DeviceSelector from "../components/DeviceSelector";
 
-function TemplateView() {
+export default function TemplateView() {
   const { systemIp: urlSystemIp } = useParams();
   const navigate = useNavigate();
   const { selectedDevice } = useDeviceContext();
-
   const activeIp = urlSystemIp || (selectedDevice ? selectedDevice["system-ip"] : null);
 
-  // Fetch device details
-  const detailsUrl = activeIp ? `/api/device/${activeIp}/details` : null;
-  const {
-    data: details,
-    isLoading: detailsLoading,
-    error: detailsError,
-  } = useApiFetch(detailsUrl);
-
-  // Fetch template hierarchy
-  const templatesUrl = activeIp ? `/api/device/${activeIp}/templates` : null;
-  const {
-    data: templates,
-    isLoading: templatesLoading,
-    error: templatesError,
-  } = useApiFetch(templatesUrl);
-
+  const { data: details, isLoading: detailsLoading, error: detailsError } = useApiFetch(activeIp ? `/api/device/${activeIp}/details` : null);
+  const { data: templates, isLoading: templatesLoading, error: templatesError } = useApiFetch(activeIp ? `/api/device/${activeIp}/templates` : null);
   const isLoading = detailsLoading || templatesLoading;
 
-  const handleDeviceSelect = (ip) => {
-    navigate(`/templates/${ip}`);
-  };
-
   return (
-    <div style={{ padding: "2rem", maxWidth: "1100px", margin: "0 auto" }}>
-      {/* Header with device selector */}
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: "1.5rem",
-          flexWrap: "wrap",
-          gap: "1rem",
-        }}
-      >
-        <h1 style={{ margin: 0, color: "#333" }}>Template Hierarchy</h1>
-        <DeviceSelector onSelect={handleDeviceSelect} />
-      </div>
+    <Box>
+      <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 3, flexWrap: "wrap", gap: 1 }}>
+        <Typography variant="h5">Template Hierarchy</Typography>
+        <DeviceSelector onSelect={(ip) => navigate(`/templates/${ip}`)} />
+      </Box>
 
-      {!activeIp && (
-        <div style={emptyState}>
-          <p style={{ fontSize: "1.1rem", color: "#666" }}>
-            Select a device above to view its template hierarchy, or click a
-            device on the{" "}
-            <Link to="/" style={{ color: "#1A73E8" }}>
-              Dashboard
-            </Link>
-            .
-          </p>
-        </div>
-      )}
-
+      {!activeIp && <Alert severity="info">Select a device to view its template hierarchy.</Alert>}
       {isLoading && <LoadingSpinner message="Loading template data..." />}
-
       {(detailsError || templatesError) && (
-        <div style={{ padding: "1rem", color: "#c62828", backgroundColor: "#ffebee", borderRadius: "6px", marginBottom: "1rem" }}>
-          {detailsError && <p>Device error: {detailsError}</p>}
-          {templatesError && <p>Template error: {templatesError}</p>}
-        </div>
+        <Alert severity="error" sx={{ mb: 2 }}>
+          {detailsError && <div>Device error: {detailsError}</div>}
+          {templatesError && <div>Template error: {templatesError}</div>}
+        </Alert>
       )}
 
-      {/* Device Info Summary */}
       {details && !isLoading && (
-        <div style={deviceCard}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
-            <h2 style={{ margin: 0, fontSize: "1.25rem" }}>
-              {details.hostName || "Unnamed Device"}
-            </h2>
-            <span
-              style={{
-                fontSize: "0.8rem",
-                padding: "3px 10px",
-                borderRadius: "12px",
-                backgroundColor: details.reachability === "reachable" ? "#e8f5e9" : "#ffebee",
-                color: details.reachability === "reachable" ? "#2e7d32" : "#c62828",
-                fontWeight: 600,
-              }}
-            >
-              {details.reachability || "unknown"}
-            </span>
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "0.4rem", fontSize: "0.9rem" }}>
-            <InfoItem label="System IP" value={details.systemIp} />
-            <InfoItem label="Model" value={details.deviceModel} />
-            <InfoItem label="Site ID" value={details.siteId} />
-            <InfoItem label="OS" value={details.deviceOs} />
-            <InfoItem label="Template" value={details.template} />
-            <InfoItem label="Template ID" value={details.templateId} />
-          </div>
-        </div>
-      )}
-
-      {/* Template Hierarchy Tree */}
-      {templates && !isLoading && (
-        <div style={{ marginTop: "1.5rem" }}>
-          {/* Device Template Header */}
-          <div style={templateHeader}>
-            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-              <span style={iconStyle}>📦</span>
-              <div>
-                <h3 style={{ margin: 0, fontSize: "1.1rem" }}>
-                  {templates.deviceTemplateName}
-                </h3>
-                <p style={{ margin: "2px 0 0 0", fontSize: "0.8rem", color: "#666" }}>
-                  Device Template
-                  {templates.deviceTemplateDescription && ` — ${templates.deviceTemplateDescription}`}
-                </p>
-              </div>
-            </div>
-            <span style={{ fontSize: "0.8rem", color: "#888" }}>
-              {templates.featureTemplates?.length || 0} feature templates
-            </span>
-          </div>
-
-          {/* Feature Templates List */}
-          {templates.featureTemplates && templates.featureTemplates.length > 0 ? (
-            <div style={{ marginTop: "0.5rem" }}>
-              {templates.featureTemplates.map((ft, i) => (
-                <FeatureTemplateCard key={ft.templateId || i} template={ft} depth={0} />
+        <Card sx={{ mb: 3 }}>
+          <CardContent>
+            <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 1.5 }}>
+              <Typography variant="h6">{details.hostName || "Unnamed Device"}</Typography>
+              <Chip label={details.reachability || "unknown"} size="small" color={details.reachability === "reachable" ? "success" : "error"} />
+            </Box>
+            <Grid container spacing={1}>
+              {[
+                ["System IP", details.systemIp],
+                ["Model", details.deviceModel],
+                ["Site ID", details.siteId],
+                ["OS", details.deviceOs],
+                ["Template", details.template],
+                ["Template ID", details.templateId],
+              ].map(([label, value]) => (
+                <Grid item xs={6} sm={4} md={3} key={label}>
+                  <Typography variant="caption" color="text.secondary" sx={{ textTransform: "uppercase", fontSize: "0.7rem", letterSpacing: "0.05em" }}>{label}</Typography>
+                  <Typography variant="body2" fontWeight={500}>{value || "N/A"}</Typography>
+                </Grid>
               ))}
-            </div>
-          ) : (
-            <p style={{ color: "#888", textAlign: "center", padding: "2rem" }}>
-              No feature templates attached to this device template.
-            </p>
-          )}
-        </div>
+            </Grid>
+          </CardContent>
+        </Card>
       )}
-    </div>
+
+      {templates && !isLoading && (
+        <Box>
+          <Paper sx={{ p: 2, mb: 1.5, bgcolor: "primary.main", color: "#fff", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+              <PackageIcon />
+              <Box>
+                <Typography variant="subtitle1" fontWeight={600}>{templates.deviceTemplateName}</Typography>
+                <Typography variant="caption" sx={{ opacity: 0.8 }}>
+                  Device Template{templates.deviceTemplateDescription && ` — ${templates.deviceTemplateDescription}`}
+                </Typography>
+              </Box>
+            </Box>
+            <Chip label={`${templates.featureTemplates?.length || 0} features`} size="small" sx={{ bgcolor: "rgba(255,255,255,0.2)", color: "#fff" }} />
+          </Paper>
+
+          {templates.featureTemplates && templates.featureTemplates.length > 0 ? (
+            templates.featureTemplates.map((ft, i) => (
+              <FeatureTemplateCard key={ft.templateId || i} template={ft} depth={0} />
+            ))
+          ) : (
+            <Alert severity="info">No feature templates attached.</Alert>
+          )}
+        </Box>
+      )}
+    </Box>
   );
 }
 
@@ -149,107 +108,51 @@ function FeatureTemplateCard({ template, depth }) {
   const hasSubs = template.subTemplates && template.subTemplates.length > 0;
 
   return (
-    <div style={{ marginLeft: depth > 0 ? "1.5rem" : 0 }}>
-      <div
-        style={{
-          ...featureCardStyle,
-          borderLeftColor: depth === 0 ? "#1A73E8" : "#90CAF9",
+    <Box sx={{ ml: depth > 0 ? 3 : 0 }}>
+      <Paper
+        variant="outlined"
+        sx={{
+          p: 1.25,
+          my: 0.5,
+          borderLeft: 3,
+          borderLeftColor: depth === 0 ? "primary.main" : "primary.light",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
           cursor: hasSubs ? "pointer" : "default",
+          "&:hover": { bgcolor: "action.hover" },
         }}
         onClick={() => hasSubs && setExpanded(!expanded)}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flex: 1 }}>
-          <span style={{ fontSize: "1rem" }}>
-            {hasSubs ? (expanded ? "▾" : "▸") : "•"}
-          </span>
-          <div style={{ flex: 1 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
-              <strong style={{ fontSize: "0.95rem" }}>{template.templateName}</strong>
-              <span style={typeBadge}>{template.templateType}</span>
-            </div>
+        <Box sx={{ display: "flex", alignItems: "center", gap: 0.75, flex: 1 }}>
+          {hasSubs ? (
+            <IconButton size="small" sx={{ p: 0 }}>
+              {expanded ? <ExpandMoreIcon fontSize="small" /> : <ChevronRightIcon fontSize="small" />}
+            </IconButton>
+          ) : (
+            <CircleIcon sx={{ fontSize: 8, color: "text.disabled", mx: 0.75 }} />
+          )}
+          <Box>
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
+              <Typography variant="body2" fontWeight={600}>{template.templateName}</Typography>
+              <Chip label={template.templateType} size="small" sx={{ fontSize: "0.7rem", height: 20, bgcolor: "primary.main", color: "#fff" }} />
+            </Box>
             {template.templateDescription && (
-              <p style={{ margin: "2px 0 0 0", fontSize: "0.8rem", color: "#777" }}>
-                {template.templateDescription}
-              </p>
+              <Typography variant="caption" color="text.secondary">{template.templateDescription}</Typography>
             )}
-          </div>
-        </div>
+          </Box>
+        </Box>
         {hasSubs && (
-          <span style={{ fontSize: "0.75rem", color: "#999", whiteSpace: "nowrap" }}>
-            {template.subTemplates.length} sub
-          </span>
+          <Chip label={`${template.subTemplates.length} sub`} size="small" variant="outlined" sx={{ fontSize: "0.7rem", height: 20 }} />
         )}
-      </div>
-      {hasSubs && expanded && (
-        <div>
+      </Paper>
+      {hasSubs && (
+        <Collapse in={expanded}>
           {template.subTemplates.map((st, j) => (
             <FeatureTemplateCard key={st.templateId || j} template={st} depth={depth + 1} />
           ))}
-        </div>
+        </Collapse>
       )}
-    </div>
+    </Box>
   );
 }
-
-function InfoItem({ label, value }) {
-  return (
-    <p style={{ margin: "0.15rem 0" }}>
-      <strong style={{ color: "#555" }}>{label}:</strong>{" "}
-      {value || "N/A"}
-    </p>
-  );
-}
-
-const emptyState = {
-  textAlign: "center",
-  padding: "3rem 2rem",
-  backgroundColor: "#f8f9fa",
-  borderRadius: "8px",
-  border: "1px dashed #ccc",
-};
-
-const deviceCard = {
-  backgroundColor: "#f8f9fa",
-  border: "1px solid #dee2e6",
-  borderRadius: "8px",
-  padding: "1.25rem",
-};
-
-const templateHeader = {
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "center",
-  padding: "1rem 1.25rem",
-  backgroundColor: "#e3f2fd",
-  borderRadius: "8px",
-  border: "1px solid #bbdefb",
-};
-
-const iconStyle = {
-  fontSize: "1.5rem",
-};
-
-const featureCardStyle = {
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "center",
-  padding: "0.75rem 1rem",
-  margin: "4px 0",
-  backgroundColor: "#fff",
-  borderRadius: "6px",
-  border: "1px solid #e0e0e0",
-  borderLeft: "3px solid #1A73E8",
-  transition: "background-color 0.15s",
-};
-
-const typeBadge = {
-  display: "inline-block",
-  padding: "1px 8px",
-  borderRadius: "10px",
-  backgroundColor: "#e8eaf6",
-  color: "#3949ab",
-  fontSize: "0.72rem",
-  fontWeight: 600,
-};
-
-export default TemplateView;

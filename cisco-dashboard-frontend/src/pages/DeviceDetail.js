@@ -1,166 +1,143 @@
 import React from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link as RouterLink, useNavigate } from "react-router-dom";
+import {
+  Box,
+  Breadcrumbs,
+  Card,
+  CardContent,
+  Chip,
+  Grid,
+  Link,
+  Paper,
+  Typography,
+  Alert,
+} from "@mui/material";
+import {
+  Speed as SpeedIcon,
+  Security as SecurityIcon,
+  Analytics as AnalyticsIcon,
+  Hub as HubIcon,
+  NavigateNext as NavNextIcon,
+} from "@mui/icons-material";
 import useApiFetch from "../hooks/useApiFetch";
 import LoadingSpinner from "../components/LoadingSpinner";
 
-const sections = [
-  { label: "BFD Sessions", path: "bfd" },
-  { label: "Tunnel Stats", path: "tunnel" },
-  { label: "IPSec", path: "ipsec" },
-  { label: "Control Plane", path: "control-plane" },
-  { label: "Connections", path: "connections" },
-  { label: "Advertised Routes", path: "advertised-routes" },
-  { label: "Received Routes", path: "received-routes" },
-  { label: "Advertised TLOCs", path: "advertised-tlocs" },
-  { label: "Received TLOCs", path: "received-tlocs" },
-  { label: "App Routes", path: "app-routes" },
-  { label: "View Templates", path: "_templates" },
-  { label: "Policy Forensics", path: "_forensics" },
-  { label: "SLA Dashboard", path: "_sla" },
+const quickNav = [
+  { label: "BFD Sessions", path: "/realtime/bfd", icon: <SpeedIcon fontSize="small" /> },
+  { label: "Tunnel Stats", path: "/realtime/tunnel", icon: <HubIcon fontSize="small" /> },
+  { label: "IPSec", path: "/realtime/ipsec", icon: <SecurityIcon fontSize="small" /> },
+  { label: "Control Plane", path: "/realtime/control-plane" },
+  { label: "Connections", path: "/realtime/connections" },
+  { label: "Advertised Routes", path: "/realtime/advertised-routes" },
+  { label: "Received Routes", path: "/realtime/received-routes" },
+  { label: "Advertised TLOCs", path: "/realtime/advertised-tlocs" },
+  { label: "Received TLOCs", path: "/realtime/received-tlocs" },
+  { label: "App Routes", path: "/realtime/app-routes" },
+  { label: "Templates", path: "/templates" },
+  { label: "Policy Forensics", path: "/policy-forensics", icon: <AnalyticsIcon fontSize="small" /> },
+  { label: "SLA Dashboard", path: "/sla-dashboard", icon: <AnalyticsIcon fontSize="small" /> },
 ];
 
-function DeviceDetail() {
+const infoFields = [
+  { label: "System IP", key: "system-ip" },
+  { label: "Device ID", key: "deviceId" },
+  { label: "Model", key: "device-model" },
+  { label: "Site ID", key: "site-id" },
+  { label: "Status", key: "status" },
+  { label: "State", key: "state" },
+  { label: "Ctrl Connections", key: "controlConnections" },
+  { label: "Device OS", key: "device-os" },
+  { label: "Certificate", key: "certificate-validity" },
+];
+
+export default function DeviceDetail() {
   const { systemIp } = useParams();
+  const navigate = useNavigate();
   const { data: devices, isLoading, error } = useApiFetch("/api/devices");
 
-  // Find the specific device from the full list
-  const device = devices
-    ? devices.find((d) => d["system-ip"] === systemIp)
-    : null;
+  const device = devices ? devices.find((d) => d["system-ip"] === systemIp) : null;
 
   if (isLoading) return <LoadingSpinner message="Loading device info..." />;
-  if (error) return <p style={{ color: "red", padding: "2rem" }}>Error: {error}</p>;
+  if (error) return <Alert severity="error" sx={{ m: 2 }}>{error}</Alert>;
   if (!device)
     return (
-      <p style={{ padding: "2rem", textAlign: "center" }}>
+      <Alert severity="warning" sx={{ m: 2 }}>
         Device <strong>{systemIp}</strong> not found.{" "}
-        <Link to="/">Back to Dashboard</Link>
-      </p>
+        <Link component={RouterLink} to="/">Back to Dashboard</Link>
+      </Alert>
     );
 
-  const isReachable =
-    (device["reachability"] || "").toLowerCase() === "reachable";
+  const isReachable = (device["reachability"] || "").toLowerCase() === "reachable";
 
   return (
-    <div style={{ padding: "2rem", maxWidth: "1200px", margin: "0 auto" }}>
-      {/* Breadcrumb */}
-      <p style={{ marginBottom: "1rem", color: "#666" }}>
-        <Link to="/" style={{ color: "#1A73E8", textDecoration: "none" }}>
-          Dashboard
-        </Link>{" "}
-        / <strong>{device["host-name"] || systemIp}</strong>
-      </p>
+    <Box>
+      <Breadcrumbs separator={<NavNextIcon fontSize="small" />} sx={{ mb: 2 }}>
+        <Link component={RouterLink} to="/" underline="hover" color="inherit">Dashboard</Link>
+        <Typography color="text.primary" variant="body2" fontWeight={600}>
+          {device["host-name"] || systemIp}
+        </Typography>
+      </Breadcrumbs>
 
       {/* Device Info Card */}
-      <div
-        style={{
-          backgroundColor: isReachable ? "#E6FFEB" : "#FFEDED",
-          border: "1px solid #ccc",
-          borderRadius: "8px",
-          padding: "1.5rem",
-          marginBottom: "2rem",
-          boxShadow: "0 2px 8px rgba(0,0,0,0.05)",
-        }}
-      >
-        <h1 style={{ margin: "0 0 1rem 0", fontSize: "1.5rem" }}>
-          {device["host-name"] || "Unnamed Device"}
-          <span
-            style={{
-              marginLeft: "1rem",
-              fontSize: "0.85rem",
-              color: isReachable ? "#2e7d32" : "#c62828",
-            }}
-          >
-            {isReachable ? "● Reachable" : "● Unreachable"}
-          </span>
-        </h1>
+      <Card sx={{ mb: 3, borderLeft: 4, borderColor: isReachable ? "success.main" : "error.main" }}>
+        <CardContent>
+          <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2, flexWrap: "wrap", gap: 1 }}>
+            <Typography variant="h5">
+              {device["host-name"] || "Unnamed Device"}
+            </Typography>
+            <Chip
+              label={isReachable ? "Reachable" : "Unreachable"}
+              color={isReachable ? "success" : "error"}
+              size="small"
+            />
+          </Box>
+          <Grid container spacing={1.5}>
+            {infoFields.map((f) => (
+              <Grid item xs={6} sm={4} md={3} key={f.key}>
+                <Typography variant="caption" color="text.secondary" sx={{ textTransform: "uppercase", fontSize: "0.7rem", letterSpacing: "0.05em" }}>
+                  {f.label}
+                </Typography>
+                <Typography variant="body2" fontWeight={500}>
+                  {device[f.key] || "N/A"}
+                </Typography>
+              </Grid>
+            ))}
+            <Grid item xs={6} sm={4} md={3}>
+              <Typography variant="caption" color="text.secondary" sx={{ textTransform: "uppercase", fontSize: "0.7rem", letterSpacing: "0.05em" }}>
+                Uptime
+              </Typography>
+              <Typography variant="body2" fontWeight={500}>
+                {device["uptime-date"] ? new Date(device["uptime-date"]).toLocaleString() : "N/A"}
+              </Typography>
+            </Grid>
+          </Grid>
+        </CardContent>
+      </Card>
 
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-            gap: "0.5rem",
-          }}
-        >
-          <InfoItem label="System IP" value={device["system-ip"]} />
-          <InfoItem label="Device ID" value={device["deviceId"]} />
-          <InfoItem label="Device Model" value={device["device-model"]} />
-          <InfoItem label="Site ID" value={device["site-id"]} />
-          <InfoItem label="Status" value={device["status"]} />
-          <InfoItem label="State" value={device["state"]} />
-          <InfoItem
-            label="Control Connections"
-            value={device["controlConnections"]}
-          />
-          <InfoItem label="Device OS" value={device["device-os"]} />
-          <InfoItem
-            label="Certificate"
-            value={device["certificate-validity"]}
-          />
-          <InfoItem
-            label="Uptime"
-            value={
-              device["uptime-date"]
-                ? new Date(device["uptime-date"]).toLocaleString()
-                : "N/A"
-            }
-          />
-        </div>
-      </div>
-
-      {/* Quick Navigation Grid */}
-      <h2 style={{ marginBottom: "1rem", color: "#333" }}>
-        Real-Time Data for {systemIp}
-      </h2>
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
-          gap: "1rem",
-        }}
-      >
-        {sections.map((s) => (
-          <Link
-            key={s.path}
-            to={s.path === "_templates" ? `/templates/${systemIp}` : s.path === "_forensics" ? `/policy-forensics/${systemIp}` : s.path === "_sla" ? `/sla-dashboard/${systemIp}` : `/realtime/${s.path}/${systemIp}`}
-            style={{
-              display: "block",
-              padding: "1rem 1.25rem",
-              backgroundColor: "#f8f9fa",
-              border: "1px solid #dee2e6",
-              borderRadius: "8px",
-              textDecoration: "none",
-              color: "#333",
-              fontWeight: 500,
-              textAlign: "center",
-              transition: "all 0.2s",
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = "#1A73E8";
-              e.currentTarget.style.color = "#fff";
-              e.currentTarget.style.borderColor = "#1A73E8";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = "#f8f9fa";
-              e.currentTarget.style.color = "#333";
-              e.currentTarget.style.borderColor = "#dee2e6";
-            }}
-          >
-            {s.label}
-          </Link>
+      {/* Quick Navigation */}
+      <Typography variant="h6" sx={{ mb: 2 }}>Quick Navigation</Typography>
+      <Grid container spacing={1.5}>
+        {quickNav.map((item) => (
+          <Grid item xs={6} sm={4} md={3} lg={2} key={item.path}>
+            <Paper
+              variant="outlined"
+              sx={{
+                p: 1.5,
+                textAlign: "center",
+                cursor: "pointer",
+                transition: "all 0.15s",
+                "&:hover": { bgcolor: "primary.main", color: "#fff", borderColor: "primary.main" },
+              }}
+              onClick={() => navigate(`${item.path}/${systemIp}`)}
+            >
+              {item.icon && <Box sx={{ mb: 0.5 }}>{item.icon}</Box>}
+              <Typography variant="body2" fontWeight={500} fontSize="0.8rem">
+                {item.label}
+              </Typography>
+            </Paper>
+          </Grid>
         ))}
-      </div>
-    </div>
+      </Grid>
+    </Box>
   );
 }
-
-function InfoItem({ label, value }) {
-  return (
-    <p style={{ margin: "0.2rem 0" }}>
-      <strong style={{ color: "#555" }}>{label}:</strong>{" "}
-      {value || "N/A"}
-    </p>
-  );
-}
-
-export default DeviceDetail;

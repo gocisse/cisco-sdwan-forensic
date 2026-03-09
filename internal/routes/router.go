@@ -62,7 +62,7 @@ func registerAPIRoutes(r *mux.Router, apiClient *utils.APIClient) {
 
 	// ─── Real-time (device-scoped, uses {system-ip}) ────────────────────
 	r.HandleFunc("/api/control-plane/{system-ip}",
-		h(apiClient, "dataservice/device/control/synced/control-plane?deviceId=", "system-ip")).Methods("GET")
+		h(apiClient, "dataservice/device/control/synced/connections?deviceId=", "system-ip")).Methods("GET")
 	r.HandleFunc("/api/connections/{system-ip}",
 		h(apiClient, "dataservice/device/control/connections?deviceId=", "system-ip")).Methods("GET")
 	r.HandleFunc("/api/routes/received/{system-ip}",
