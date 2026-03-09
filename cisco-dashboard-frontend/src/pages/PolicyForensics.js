@@ -89,8 +89,13 @@ export default function PolicyForensics() {
                       />
                       <PolicySection title="Policers" icon={<TrafficIcon fontSize="small" />} items={localData.policers}
                         renderItem={(item, i) => (
-                          <Box key={i} sx={{ py: 0.5, borderBottom: "1px solid", borderColor: "divider" }}>
+                          <Box key={i} sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", py: 0.5, borderBottom: "1px solid", borderColor: "divider" }}>
                             <Typography variant="body2" fontWeight={500}>{item.name}</Typography>
+                            <Box sx={{ display: "flex", gap: 0.5 }}>
+                              {item.cir && <Chip label={`CIR: ${item.cir}`} size="small" color="info" variant="outlined" sx={{ fontSize: "0.7rem", height: 20 }} />}
+                              {item.burst && <Chip label={`Burst: ${item.burst}`} size="small" color="secondary" variant="outlined" sx={{ fontSize: "0.7rem", height: 20 }} />}
+                              {item.exceedAction && <Chip label={item.exceedAction} size="small" color="warning" variant="outlined" sx={{ fontSize: "0.7rem", height: 20 }} />}
+                            </Box>
                           </Box>
                         )}
                       />

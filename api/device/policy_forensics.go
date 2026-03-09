@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
+	"strings"
 
 	"sdwan-app/middleware"
 	"sdwan-app/utils"
@@ -18,11 +20,14 @@ import (
 
 // LocalPolicyEntry represents a single policy item running on a device.
 type LocalPolicyEntry struct {
-	Name      string `json:"name"`
-	Type      string `json:"type"`
-	Direction string `json:"direction,omitempty"`
-	Interface string `json:"interface,omitempty"`
-	Sequence  string `json:"sequence,omitempty"`
+	Name         string `json:"name"`
+	Type         string `json:"type"`
+	Direction    string `json:"direction,omitempty"`
+	Interface    string `json:"interface,omitempty"`
+	Sequence     string `json:"sequence,omitempty"`
+	CIR          string `json:"cir,omitempty"`
+	Burst        string `json:"burst,omitempty"`
+	ExceedAction string `json:"exceedAction,omitempty"`
 }
 
 // LocalPolicyResponse is the consolidated response for GET /api/device/{system-ip}/policy/local.
@@ -59,13 +64,13 @@ type PolicySequenceInfo struct {
 
 // CentralPolicyResponse is the consolidated response for GET /api/device/{system-ip}/policy/centralized.
 type CentralPolicyResponse struct {
-	SystemIP       string                `json:"systemIp"`
-	HostName       string                `json:"hostName"`
-	SiteID         string                `json:"siteId"`
-	DataPolicies   []CentralPolicyMatch  `json:"dataPolicies"`
+	SystemIP        string               `json:"systemIp"`
+	HostName        string               `json:"hostName"`
+	SiteID          string               `json:"siteId"`
+	DataPolicies    []CentralPolicyMatch `json:"dataPolicies"`
 	ControlPolicies []CentralPolicyMatch `json:"controlPolicies"`
-	AppPolicies    []CentralPolicyMatch  `json:"appRoutePolicies"`
-	TotalCount     int                   `json:"totalCount"`
+	AppPolicies     []CentralPolicyMatch `json:"appRoutePolicies"`
+	TotalCount      int                  `json:"totalCount"`
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -146,15 +151,30 @@ func FetchLocalPolicy(apiClient *utils.APIClient) http.HandlerFunc {
 		// Fetch policers
 		policers := fetchLocalPolicyItems(apiClient, systemIP, "dataservice/device/policer",
 			func(raw json.RawMessage) []LocalPolicyEntry {
+				log.Printf("\U0001f50d Raw policer data for %s: %s", systemIP, string(raw))
 				var items []struct {
-					Name string `json:"policerName"`
+					PolicerName  string `json:"policer-name"`
+					PolicerName2 string `json:"policerName"`
+					CIR          string `json:"cir"`
+					Burst        string `json:"bc"`
+					ExceedAction string `json:"exceed-action"`
 				}
 				json.Unmarshal(raw, &items)
 				entries := make([]LocalPolicyEntry, 0, len(items))
 				for _, it := range items {
+					name := it.PolicerName
+					if name == "" {
+						name = it.PolicerName2
+					}
+					if name == "" {
+						continue
+					}
 					entries = append(entries, LocalPolicyEntry{
-						Name: it.Name,
-						Type: "policer",
+						Name:         name,
+						Type:         "policer",
+						CIR:          it.CIR,
+						Burst:        it.Burst,
+						ExceedAction: it.ExceedAction,
 					})
 				}
 				return entries
@@ -164,9 +184,9 @@ func FetchLocalPolicy(apiClient *utils.APIClient) http.HandlerFunc {
 		zbfw := fetchLocalPolicyItems(apiClient, systemIP, "dataservice/device/policy/zonebfwdp/sessions",
 			func(raw json.RawMessage) []LocalPolicyEntry {
 				var items []struct {
-					SrcZone  string `json:"src-zone"`
-					DstZone  string `json:"dst-zone"`
-					Policy   string `json:"policy-name"`
+					SrcZone string `json:"src-zone"`
+					DstZone string `json:"dst-zone"`
+					Policy  string `json:"policy-name"`
 				}
 				json.Unmarshal(raw, &items)
 				// Deduplicate by policy name
@@ -261,6 +281,7 @@ func FetchCentralizedPolicy(apiClient *utils.APIClient) http.HandlerFunc {
 		}
 
 		siteID := dev.SiteID
+		log.Printf("\U0001f50d Centralized policy lookup for device %s, site-id=%s", systemIP, siteID)
 
 		// Step 2: Fetch all vSmart policies
 		rawPolicies, err := apiClient.Get("dataservice/template/policy/vsmart")
@@ -284,6 +305,7 @@ func FetchCentralizedPolicy(apiClient *utils.APIClient) http.HandlerFunc {
 			middleware.WriteError(w, http.StatusInternalServerError, "PARSE_ERROR", "Failed to parse vSmart policies")
 			return
 		}
+		log.Printf("\U0001f50d Found %d vSmart policies", len(policyEnvelope.Data))
 
 		// Step 3: For each active policy, check if the device's site-id is covered
 		var dataPolicies, controlPolicies, appPolicies []CentralPolicyMatch
@@ -303,9 +325,10 @@ func FetchCentralizedPolicy(apiClient *utils.APIClient) http.HandlerFunc {
 			}
 
 			if err := json.Unmarshal([]byte(pol.PolicyDefinition), &def); err != nil {
-				log.Printf("Policy definition parse error for %s: %v", pol.PolicyName, err)
+				log.Printf("Policy definition parse error for %s: %v (raw: %.200s)", pol.PolicyName, err, pol.PolicyDefinition)
 				continue
 			}
+			log.Printf("\U0001f50d Policy %q: %d assemblies, active=%v", pol.PolicyName, len(def.Assemblies), pol.IsPolicyActivated)
 
 			// Collect all site list refs from this policy
 			siteListRefs := make(map[string]bool)
@@ -318,15 +341,18 @@ func FetchCentralizedPolicy(apiClient *utils.APIClient) http.HandlerFunc {
 			}
 
 			// Check if any of the referenced site lists contain our device's site-id
+			log.Printf("\U0001f50d Policy %q has %d site list refs", pol.PolicyName, len(siteListRefs))
 			matchesSite := false
 			for ref := range siteListRefs {
 				if siteListContainsSiteID(apiClient, ref, siteID) {
+					log.Printf("\u2705 Site list %s contains site-id %s for policy %q", ref, siteID, pol.PolicyName)
 					matchesSite = true
 					break
 				}
 			}
 
 			if !matchesSite {
+				log.Printf("\u274c Policy %q does not match site-id %s", pol.PolicyName, siteID)
 				continue
 			}
 
@@ -389,15 +415,19 @@ func siteListContainsSiteID(apiClient *utils.APIClient, siteListRef, siteID stri
 		return false
 	}
 
+	log.Printf("🔍 Site list %s raw response: %.500s", siteListRef, string(rawData))
+
 	var siteList struct {
 		Entries []struct {
 			SiteID string `json:"siteId"`
 		} `json:"entries"`
 	}
 	if err := json.Unmarshal(rawData, &siteList); err != nil {
+		log.Printf("Site list parse error for %s: %v", siteListRef, err)
 		return false
 	}
 
+	log.Printf("🔍 Site list %s has %d entries, looking for site-id %s", siteListRef, len(siteList.Entries), siteID)
 	for _, entry := range siteList.Entries {
 		// Site list entries can contain ranges like "100-200" or single IDs like "100"
 		if matchesSiteEntry(entry.SiteID, siteID) {
@@ -410,22 +440,20 @@ func siteListContainsSiteID(apiClient *utils.APIClient, siteListRef, siteID stri
 // matchesSiteEntry checks if a siteID matches a site list entry.
 // Entries can be single values ("100") or ranges ("100-200").
 func matchesSiteEntry(entry, siteID string) bool {
+	entry = strings.TrimSpace(entry)
+	siteID = strings.TrimSpace(siteID)
 	if entry == siteID {
 		return true
 	}
-	// Check for range format
-	var lo, hi string
-	for i, c := range entry {
-		if c == '-' {
-			lo = entry[:i]
-			hi = entry[i+1:]
-			break
+	// Check for range format using numeric comparison
+	parts := strings.SplitN(entry, "-", 2)
+	if len(parts) == 2 {
+		lo, errLo := strconv.Atoi(parts[0])
+		hi, errHi := strconv.Atoi(parts[1])
+		site, errSite := strconv.Atoi(siteID)
+		if errLo == nil && errHi == nil && errSite == nil {
+			return site >= lo && site <= hi
 		}
-	}
-	if lo != "" && hi != "" {
-		// Simple string comparison works for numeric site IDs of equal length,
-		// but do numeric comparison for correctness
-		return siteID >= lo && siteID <= hi
 	}
 	return false
 }
