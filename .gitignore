@@ -1,0 +1,20 @@
+# Go binary
+sdwan-app
+*.exe
+
+# Environment
+.env
+
+# React
+cisco-dashboard-frontend/node_modules/
+cisco-dashboard-frontend/build/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
