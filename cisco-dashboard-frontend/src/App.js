@@ -8,6 +8,7 @@ import Dashboard from "./pages/Dashboard";
 import DeviceDetail from "./pages/DeviceDetail";
 import TemplateView from "./pages/TemplateView";
 import PolicyForensics from "./pages/PolicyForensics";
+import SLADashboard from "./pages/SLADashboard";
 import Alarms from "./pages/Alarms";
 import AdvertisedRoutes from "./pages/RealTime/AdvertisedRoutes";
 import ReceivedRoutes from "./pages/RealTime/ReceivedRoutes";
@@ -72,6 +73,9 @@ function App() {
 
         {/* Policy Forensics */}
         <Route path="/policy-forensics/:systemIp?" element={<PolicyForensics />} />
+
+        {/* SLA & Traffic Analysis */}
+        <Route path="/sla-dashboard/:systemIp?" element={<SLADashboard />} />
 
         {/* RealTime endpoints — with optional :systemIp for deep-linking */}
         <Route path="/realtime/advertised-routes/:systemIp?" element={<AdvertisedRoutes />} />

@@ -16,6 +16,7 @@ const sections = [
   { label: "App Routes", path: "app-routes" },
   { label: "View Templates", path: "_templates" },
   { label: "Policy Forensics", path: "_forensics" },
+  { label: "SLA Dashboard", path: "_sla" },
 ];
 
 function DeviceDetail() {
@@ -121,7 +122,7 @@ function DeviceDetail() {
         {sections.map((s) => (
           <Link
             key={s.path}
-            to={s.path === "_templates" ? `/templates/${systemIp}` : s.path === "_forensics" ? `/policy-forensics/${systemIp}` : `/realtime/${s.path}/${systemIp}`}
+            to={s.path === "_templates" ? `/templates/${systemIp}` : s.path === "_forensics" ? `/policy-forensics/${systemIp}` : s.path === "_sla" ? `/sla-dashboard/${systemIp}` : `/realtime/${s.path}/${systemIp}`}
             style={{
               display: "block",
               padding: "1rem 1.25rem",

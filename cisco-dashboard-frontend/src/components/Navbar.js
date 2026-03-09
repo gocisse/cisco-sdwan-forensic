@@ -265,6 +265,13 @@ function Navbar() {
             </Link>
           </li>
 
+          {/* SLA Dashboard */}
+          <li>
+            <Link to="/sla-dashboard" className="dropbtn" style={{ textDecoration: 'none' }}>
+              SLA
+            </Link>
+          </li>
+
           {/* Alarms */}
           <li>
             <Link to="/alarms" className="dropbtn" style={{ textDecoration: 'none' }}>

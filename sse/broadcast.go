@@ -6,6 +6,7 @@ package sse
 import (
 	"encoding/json"
 	"log"
+	"strconv"
 	"sync"
 	"time"
 
@@ -106,9 +107,10 @@ type PortStats struct {
 // ======================
 
 var (
-	BfdBroker   *Broker
-	UsageBroker *Broker
-	StatsBroker *Broker
+	BfdBroker      *Broker
+	UsageBroker    *Broker
+	StatsBroker    *Broker
+	AppRouteBroker *Broker
 )
 
 // InitBrokers initializes all SSE brokers
@@ -116,10 +118,12 @@ func InitBrokers() {
 	BfdBroker = NewBroker()
 	UsageBroker = NewBroker()
 	StatsBroker = NewBroker()
+	AppRouteBroker = NewBroker()
 
 	go BfdBroker.Run()
 	go UsageBroker.Run()
 	go StatsBroker.Run()
+	go AppRouteBroker.Run()
 
 	log.Println("✅ SSE Brokers initialized")
 }
@@ -263,6 +267,81 @@ func BroadcastUsage(apiClient *utils.APIClient) {
 // ======================
 //  Stats Broadcast
 // ======================
+
+// BroadcastAppRoute periodically fetches app-route statistics with SLA enrichment for each connected client
+func BroadcastAppRoute(apiClient *utils.APIClient) {
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		<-ticker.C
+		systemIPs := AppRouteBroker.GetClientSystemIPs()
+		if len(systemIPs) == 0 {
+			continue
+		}
+
+		log.Printf("🔄 Fetching App-Route Data for SSE clients...")
+
+		var wg sync.WaitGroup
+		for _, systemIP := range systemIPs {
+			wg.Add(1)
+			go func(ip string) {
+				defer wg.Done()
+
+				var appRouteData []map[string]interface{}
+				err := fetchData(apiClient, "dataservice/device/app-route/statistics?deviceId="+ip, &appRouteData)
+				if err != nil {
+					log.Printf("❌ Error fetching App-Route for %s: %v", ip, err)
+					return
+				}
+
+				// Enrich each flow with SLA status
+				for i := range appRouteData {
+					latency := toFloat64(appRouteData[i]["latency"])
+					loss := toFloat64(appRouteData[i]["loss"])
+					jitter := toFloat64(appRouteData[i]["jitter"])
+					appRouteData[i]["slaStatus"] = classifySSESLA(latency, loss, jitter)
+				}
+
+				dataBytes, err := json.Marshal(appRouteData)
+				if err != nil {
+					log.Printf("❌ Error marshalling App-Route data: %v", err)
+					return
+				}
+
+				AppRouteBroker.Broadcast(ip, dataBytes)
+			}(systemIP)
+		}
+		wg.Wait()
+	}
+}
+
+// classifySSESLA returns OK, WARNING, or CRITICAL for SSE broadcast enrichment.
+func classifySSESLA(latency, loss, jitter float64) string {
+	if loss >= 5.0 || latency >= 150.0 || jitter >= 50.0 {
+		return "CRITICAL"
+	}
+	if loss >= 1.0 || latency >= 100.0 || jitter >= 30.0 {
+		return "WARNING"
+	}
+	return "OK"
+}
+
+// toFloat64 converts an interface{} value (float64 or string) to float64.
+func toFloat64(v interface{}) float64 {
+	switch val := v.(type) {
+	case float64:
+		return val
+	case string:
+		f, _ := strconv.ParseFloat(val, 64)
+		return f
+	case json.Number:
+		f, _ := val.Float64()
+		return f
+	default:
+		return 0
+	}
+}
 
 // BroadcastStats periodically fetches interface stats data for each connected client
 func BroadcastStats(apiClient *utils.APIClient) {

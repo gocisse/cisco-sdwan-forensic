@@ -54,6 +54,12 @@ func registerAPIRoutes(r *mux.Router, apiClient *utils.APIClient) {
 	r.HandleFunc("/api/device/{system-ip}/policy/centralized",
 		device.FetchCentralizedPolicy(apiClient)).Methods("GET")
 
+	// ─── Traffic Analysis / SLA ────────────────────────────────────────
+	r.HandleFunc("/api/device/{system-ip}/app-route",
+		device.FetchAppRoute(apiClient)).Methods("GET")
+	r.HandleFunc("/api/device/{system-ip}/tunnel-health",
+		device.FetchTunnelHealth(apiClient)).Methods("GET")
+
 	// ─── Real-time (device-scoped, uses {system-ip}) ────────────────────
 	r.HandleFunc("/api/control-plane/{system-ip}",
 		h(apiClient, "dataservice/device/control/synced/control-plane?deviceId=", "system-ip")).Methods("GET")
@@ -147,10 +153,12 @@ func registerSSERoutes(r *mux.Router, apiClient *utils.APIClient) {
 	r.HandleFunc("/events/bfd", sse.BfdBroker.SSEHandler()).Methods("GET")
 	r.HandleFunc("/events/interface-usage", sse.UsageBroker.SSEHandler()).Methods("GET")
 	r.HandleFunc("/events/interface-stats", sse.StatsBroker.SSEHandler()).Methods("GET")
+	r.HandleFunc("/events/app-route", sse.AppRouteBroker.SSEHandler()).Methods("GET")
 
 	go sse.BroadcastBFD(apiClient)
 	go sse.BroadcastUsage(apiClient)
 	go sse.BroadcastStats(apiClient)
+	go sse.BroadcastAppRoute(apiClient)
 }
 
 // registerStaticRoutes serves the React SPA build from the given directory.
