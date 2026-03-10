@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"net/http/cookiejar"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -29,16 +31,30 @@ func NewAPIClient(config Config) (*APIClient, error) {
 	jar, _ := cookiejar.New(nil)
 
 	// 1. Create a custom Transport
-	// This handles BOTH InsecureSkipVerify (for vManage certs) AND Proxy settings
+	// This handles InsecureSkipVerify (for vManage certs), Proxy settings,
+	// and extended timeouts for remote/cloud vManage instances.
 	transport := &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-		Proxy:           http.ProxyFromEnvironment, // <--- CRITICAL: This makes it work at work
+		TLSClientConfig:       &tls.Config{InsecureSkipVerify: true},
+		Proxy:                 http.ProxyFromEnvironment,
+		DialContext:           (&net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
+		TLSHandshakeTimeout:   15 * time.Second,
+		ResponseHeaderTimeout: 30 * time.Second,
+	}
+
+	// If user provided a proxy URL, use it explicitly
+	if config.ProxyURL != "" {
+		proxyURL, err := url.Parse(config.ProxyURL)
+		if err != nil {
+			return nil, fmt.Errorf("invalid proxy URL %q: %w", config.ProxyURL, err)
+		}
+		transport.Proxy = http.ProxyURL(proxyURL)
+		log.Printf("\u2705 Using proxy: %s", config.ProxyURL)
 	}
 
 	client := &http.Client{
 		Jar:       jar,
-		Timeout:   30 * time.Second,
-		Transport: transport, // <--- Apply the custom transport
+		Timeout:   60 * time.Second,
+		Transport: transport,
 	}
 	apiClient := &APIClient{
 		BaseURL:  config.VManageURL,
@@ -47,7 +63,24 @@ func NewAPIClient(config Config) (*APIClient, error) {
 		password: config.Password,
 	}
 
+	log.Printf("Connecting to vManage at %s ...", config.VManageURL)
 	if err := apiClient.authenticate(config.Username, config.Password); err != nil {
+		// Provide helpful error messages for common connection issues
+		errMsg := err.Error()
+		if strings.Contains(errMsg, "dial tcp") && (strings.Contains(errMsg, "timeout") || strings.Contains(errMsg, "connectex") || strings.Contains(errMsg, "i/o timeout")) {
+			return nil, fmt.Errorf("authentication failed: %w\n\n"+
+				"💡 Connection timed out. Possible causes:\n"+
+				"   1. If you are behind a corporate proxy, re-run and enter the proxy URL\n"+
+				"      (e.g. http://proxy.company.com:8080)\n"+
+				"   2. Or set environment variable: set HTTPS_PROXY=http://proxy:port\n"+
+				"   3. Verify the vManage URL is correct and reachable\n"+
+				"   4. Check if a firewall is blocking outbound connections on port 443", err)
+		}
+		if strings.Contains(errMsg, "certificate") || strings.Contains(errMsg, "x509") {
+			return nil, fmt.Errorf("authentication failed (TLS error): %w\n\n"+
+				"💡 This is usually a certificate issue. The app already skips TLS verification,\n"+
+				"   but a proxy may be intercepting the connection. Try setting the proxy URL.", err)
+		}
 		return nil, fmt.Errorf("authentication failed: %w", err)
 	}
 

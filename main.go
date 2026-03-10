@@ -37,10 +37,15 @@ func getUserCredentials() (utils.Config, string) {
 	port, _ := reader.ReadString('\n')
 	port = strings.TrimSpace(port)
 
+	fmt.Print("Enter Proxy URL (leave blank if none, e.g. http://proxy.company.com:8080): ")
+	proxyURL, _ := reader.ReadString('\n')
+	proxyURL = strings.TrimSpace(proxyURL)
+
 	return utils.Config{
 		VManageURL: vManageURL,
 		Username:   username,
 		Password:   password,
+		ProxyURL:   proxyURL,
 	}, port
 }
 
