@@ -18,49 +18,56 @@ import (
 
 const staticDir = "cisco-dashboard-frontend/build"
 
+// promptIfEmpty reads a value from stdin only if the current value is empty.
+func promptIfEmpty(reader *bufio.Reader, label, current string) string {
+	if current != "" {
+		return current
+	}
+	fmt.Printf("Enter %s: ", label)
+	val, _ := reader.ReadString('\n')
+	return strings.TrimSpace(val)
+}
+
 func getUserCredentials() (utils.Config, string) {
+	// Load defaults from .env file first
+	config := utils.LoadConfig()
 	reader := bufio.NewReader(os.Stdin)
 
-	fmt.Print("Enter vManage URL: ")
-	vManageURL, _ := reader.ReadString('\n')
-	vManageURL = strings.TrimSpace(vManageURL)
+	// Show what was loaded from .env
+	if config.VManageURL != "" {
+		fmt.Printf("📄 Loaded from .env: VMANAGE_URL=%s\n", config.VManageURL)
+	}
+	if config.ProxyURL != "" {
+		fmt.Printf("📄 Loaded from .env: PROXY_URL=%s\n", config.ProxyURL)
+	}
+	if config.ProxyUser != "" {
+		fmt.Printf("📄 Loaded from .env: PROXY_USER=%s\n", config.ProxyUser)
+	}
+	if config.ProxyPass != "" {
+		fmt.Println("📄 Loaded from .env: PROXY_PASS=****")
+	}
 
-	fmt.Print("Enter Username: ")
-	username, _ := reader.ReadString('\n')
-	username = strings.TrimSpace(username)
+	// Prompt only for missing values
+	config.VManageURL = promptIfEmpty(reader, "vManage URL", config.VManageURL)
+	config.Username = promptIfEmpty(reader, "Username", config.Username)
+	config.Password = promptIfEmpty(reader, "Password", config.Password)
+	port := promptIfEmpty(reader, "Port Number", config.Port)
 
-	fmt.Print("Enter Password: ")
-	password, _ := reader.ReadString('\n')
-	password = strings.TrimSpace(password)
+	// Proxy: only prompt if not set in .env
+	config.ProxyURL = promptIfEmpty(reader, "Proxy URL (leave blank if none, e.g. http://proxy.company.com:8080)", config.ProxyURL)
 
-	fmt.Print("Enter Port Number: ")
-	port, _ := reader.ReadString('\n')
-	port = strings.TrimSpace(port)
-
-	fmt.Print("Enter Proxy URL (leave blank if none, e.g. http://proxy.company.com:8080): ")
-	proxyURL, _ := reader.ReadString('\n')
-	proxyURL = strings.TrimSpace(proxyURL)
-
-	var proxyUser, proxyPass string
-	if proxyURL != "" {
+	if config.ProxyURL != "" && config.ProxyUser == "" {
 		fmt.Print("Enter Proxy Username (leave blank if none, e.g. DOMAIN\\user): ")
-		proxyUser, _ = reader.ReadString('\n')
-		proxyUser = strings.TrimSpace(proxyUser)
-		if proxyUser != "" {
+		proxyUser, _ := reader.ReadString('\n')
+		config.ProxyUser = strings.TrimSpace(proxyUser)
+		if config.ProxyUser != "" {
 			fmt.Print("Enter Proxy Password: ")
-			proxyPass, _ = reader.ReadString('\n')
-			proxyPass = strings.TrimSpace(proxyPass)
+			proxyPass, _ := reader.ReadString('\n')
+			config.ProxyPass = strings.TrimSpace(proxyPass)
 		}
 	}
 
-	return utils.Config{
-		VManageURL: vManageURL,
-		Username:   username,
-		Password:   password,
-		ProxyURL:   proxyURL,
-		ProxyUser:  proxyUser,
-		ProxyPass:  proxyPass,
-	}, port
+	return config, port
 }
 
 func main() {

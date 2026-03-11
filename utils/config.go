@@ -35,5 +35,8 @@ func LoadConfig() Config {
 		Username:   os.Getenv("VMANAGE_USERNAME"),
 		Password:   os.Getenv("VMANAGE_PASSWORD"),
 		Port:       port,
+		ProxyURL:   os.Getenv("PROXY_URL"),
+		ProxyUser:  os.Getenv("PROXY_USER"),
+		ProxyPass:  os.Getenv("PROXY_PASS"),
 	}
 }

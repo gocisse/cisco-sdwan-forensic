@@ -142,10 +142,41 @@ func (c *APIClient) authenticate(username, password string) error {
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		return errors.New("authentication failed: invalid username/password or API access denied")
+	log.Printf("🔐 Auth response: status=%d, url=%s", resp.StatusCode, resp.Request.URL)
+
+	// Read body to check for HTML login page (vManage returns 200 even on failure)
+	body, _ := io.ReadAll(resp.Body)
+	bodyStr := string(body)
+
+	// Log cookies received
+	if cookies := c.Client.Jar.Cookies(resp.Request.URL); len(cookies) > 0 {
+		for _, ck := range cookies {
+			log.Printf("🍪 Cookie: %s=%s...", ck.Name, ck.Value[:min(len(ck.Value), 20)])
+		}
+	} else {
+		log.Println("⚠️ No cookies received from auth response")
 	}
+
+	if resp.StatusCode != http.StatusOK {
+		log.Printf("❌ Auth failed: HTTP %d, body preview: %.200s", resp.StatusCode, bodyStr)
+		return fmt.Errorf("authentication failed (HTTP %d): invalid username/password or API access denied", resp.StatusCode)
+	}
+
+	// vManage returns 200 with HTML login page on bad credentials
+	if strings.Contains(bodyStr, "<html") || strings.Contains(bodyStr, "j_security_check") {
+		log.Printf("⚠️ Auth returned HTML (possible bad credentials). Body preview: %.300s", bodyStr)
+		return errors.New("authentication failed: vManage returned a login page (check username/password)")
+	}
+
+	log.Println("✅ Authentication successful")
 	return nil
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 // getXsrfToken retrieves the XSRF token from vManage.
@@ -162,7 +193,11 @@ func (c *APIClient) getXsrfToken() error {
 	}
 	defer resp.Body.Close()
 
+	log.Printf("🔑 XSRF token response: status=%d, url=%s", resp.StatusCode, resp.Request.URL)
+
 	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		log.Printf("❌ XSRF token failed: HTTP %d, body preview: %.300s", resp.StatusCode, string(body))
 		return fmt.Errorf("failed to retrieve XSRF token, status code: %d", resp.StatusCode)
 	}
 
