@@ -66,8 +66,15 @@ func NewAPIClient(config Config) (*APIClient, error) {
 		if err != nil {
 			return nil, fmt.Errorf("invalid proxy URL %q: %w", resolvedProxy, err)
 		}
+
+		// Embed proxy credentials in the URL for Basic proxy authentication
+		if config.ProxyUser != "" {
+			proxyURL.User = url.UserPassword(config.ProxyUser, config.ProxyPass)
+			log.Printf("\u2705 Using proxy: %s (with auth as %s)", resolvedProxy, config.ProxyUser)
+		} else {
+			log.Printf("\u2705 Using proxy: %s (no auth)", resolvedProxy)
+		}
 		transport.Proxy = http.ProxyURL(proxyURL)
-		log.Printf("\u2705 Using proxy: %s", resolvedProxy)
 	}
 
 	client := &http.Client{
@@ -94,6 +101,14 @@ func NewAPIClient(config Config) (*APIClient, error) {
 				"   2. Or set environment variable: set HTTPS_PROXY=http://proxy:port\n"+
 				"   3. Verify the vManage URL is correct and reachable\n"+
 				"   4. Check if a firewall is blocking outbound connections on port 443", err)
+		}
+		if strings.Contains(errMsg, "Proxy Authorization Required") || strings.Contains(errMsg, "407") {
+			return nil, fmt.Errorf("authentication failed: %w\n\n"+
+				"💡 The proxy requires authentication (HTTP 407).\n"+
+				"   Re-run the app and enter your proxy credentials when prompted.\n"+
+				"   Use your Windows domain login, e.g.:\n"+
+				"     Proxy Username: DOMAIN\\your.username\n"+
+				"     Proxy Password: your-windows-password", err)
 		}
 		if strings.Contains(errMsg, "certificate") || strings.Contains(errMsg, "x509") {
 			return nil, fmt.Errorf("authentication failed (TLS error): %w\n\n"+

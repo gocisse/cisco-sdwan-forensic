@@ -14,6 +14,8 @@ type Config struct {
 	Password   string
 	Port       string
 	ProxyURL   string
+	ProxyUser  string
+	ProxyPass  string
 }
 
 // LoadConfig loads environment variables from .env file
