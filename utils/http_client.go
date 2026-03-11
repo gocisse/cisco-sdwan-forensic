@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -43,12 +44,30 @@ func NewAPIClient(config Config) (*APIClient, error) {
 
 	// If user provided a proxy URL, use it explicitly
 	if config.ProxyURL != "" {
-		proxyURL, err := url.Parse(config.ProxyURL)
+		resolvedProxy := config.ProxyURL
+
+		// Detect PAC (Proxy Auto-Config) URLs and resolve them
+		if isPACURL(config.ProxyURL) {
+			log.Printf("\U0001f50d Detected PAC file URL: %s", config.ProxyURL)
+			log.Printf("\U0001f50d Downloading PAC file to resolve actual proxy...")
+			actualProxy, err := resolveProxyFromPAC(config.ProxyURL, config.VManageURL)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve proxy from PAC file %q: %w\n\n"+
+					"\U0001f4a1 The PAC URL could not be resolved. Please provide the direct proxy instead.\n"+
+					"   You can find it by:\n"+
+					"   1. Open the PAC URL in your browser to see its contents\n"+
+					"   2. Look for lines like: PROXY proxy-host:port\n"+
+					"   3. Enter that proxy-host:port as: http://proxy-host:port", config.ProxyURL, err)
+			}
+			resolvedProxy = actualProxy
+		}
+
+		proxyURL, err := url.Parse(resolvedProxy)
 		if err != nil {
-			return nil, fmt.Errorf("invalid proxy URL %q: %w", config.ProxyURL, err)
+			return nil, fmt.Errorf("invalid proxy URL %q: %w", resolvedProxy, err)
 		}
 		transport.Proxy = http.ProxyURL(proxyURL)
-		log.Printf("\u2705 Using proxy: %s", config.ProxyURL)
+		log.Printf("\u2705 Using proxy: %s", resolvedProxy)
 	}
 
 	client := &http.Client{
@@ -231,4 +250,74 @@ func (c *APIClient) Get(endpoint string) ([]byte, error) {
 	}
 
 	return nil, fmt.Errorf("max retries exceeded for endpoint: %s", endpoint)
+}
+
+// isPACURL detects if a URL is a PAC (Proxy Auto-Config) file rather than a direct proxy.
+func isPACURL(rawURL string) bool {
+	lower := strings.ToLower(rawURL)
+	// Common PAC file patterns
+	if strings.HasSuffix(lower, ".pac") || strings.HasSuffix(lower, ".cgi") ||
+		strings.HasSuffix(lower, ".dat") || strings.HasSuffix(lower, ".js") {
+		return true
+	}
+	if strings.Contains(lower, "autoproxy") || strings.Contains(lower, "proxy.pac") ||
+		strings.Contains(lower, "wpad") {
+		return true
+	}
+	return false
+}
+
+// resolveProxyFromPAC downloads a PAC file and extracts the proxy server(s) from it.
+// PAC files contain JavaScript with FindProxyForURL() that returns strings like:
+//
+//	"PROXY proxy.example.com:8080"
+//	"PROXY proxy1:8080; PROXY proxy2:8080; DIRECT"
+//
+// We extract the first PROXY directive and return it as http://host:port.
+func resolveProxyFromPAC(pacURL, targetURL string) (string, error) {
+	// Use a simple HTTP client (no proxy) to fetch the PAC file itself
+	pacClient := &http.Client{
+		Timeout: 15 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		},
+	}
+
+	resp, err := pacClient.Get(pacURL)
+	if err != nil {
+		return "", fmt.Errorf("failed to download PAC file: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("PAC file returned HTTP %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read PAC file: %w", err)
+	}
+
+	pacContent := string(body)
+	log.Printf("🔍 PAC file content (%d bytes):\n%.500s", len(pacContent), pacContent)
+
+	// Extract PROXY directives from the PAC file content
+	// Match patterns like: PROXY host:port  or  PROXY host.domain.com:8080
+	proxyRegex := regexp.MustCompile(`(?i)PROXY\s+([\w.\-]+:\d+)`)
+	matches := proxyRegex.FindAllStringSubmatch(pacContent, -1)
+
+	if len(matches) == 0 {
+		return "", fmt.Errorf("no PROXY directives found in PAC file. Content preview:\n%.300s", pacContent)
+	}
+
+	// Log all found proxies
+	for i, m := range matches {
+		log.Printf("🔍 PAC proxy #%d: %s", i+1, m[1])
+	}
+
+	// Use the first PROXY directive
+	proxyHost := matches[0][1]
+	resolved := fmt.Sprintf("http://%s", proxyHost)
+	log.Printf("✅ Resolved PAC → %s", resolved)
+	return resolved, nil
 }
