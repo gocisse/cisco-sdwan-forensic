@@ -55,13 +55,15 @@ function formatNum(val) {
 function normalize(row) {
   return {
     ...row,
-    srcIp: row.srcIp || row["src-ip"] || "N/A",
-    dstIp: row.dstIp || row["dst-ip"] || "N/A",
-    application: row.application || row["app-probe-class-name"] || row.appName || "N/A",
+    srcIp: row.srcIp || row["src-ip"] || row["source-ip"] || row.sourceIp || "N/A",
+    dstIp: row.dstIp || row["dst-ip"] || row["dest-ip"] || row["destination-ip"] || row.destIp || row.destinationIp || "N/A",
+    application: row.application || row["app-probe-class-name"] || row.appName || row["app-probe-class"] || "N/A",
     localColor: row.localColor || row["local-color"] || "N/A",
     remoteColor: row.remoteColor || row["remote-color"] || "N/A",
-    state: row.state || "N/A",
-    lossPercentage: row.lossPercentage ?? row["loss-percentage"] ?? "N/A",
+    state: row.state || row["tunnel-state"] || row["oper-state"] || row["session-state"] || "N/A",
+    txPackets: row.txPackets ?? row["tx-pkts"] ?? row["tx-packets"] ?? "N/A",
+    rxPackets: row.rxPackets ?? row["rx-pkts"] ?? row["rx-packets"] ?? "N/A",
+    lossPercentage: row.lossPercentage ?? row["loss-percentage"] ?? row["loss"] ?? "N/A",
   };
 }
 
