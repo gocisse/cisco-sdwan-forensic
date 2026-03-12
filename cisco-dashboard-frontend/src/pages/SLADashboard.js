@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import {
   Box,
   Card,
@@ -19,7 +19,6 @@ import useSSE from "../hooks/useSSE";
 import LoadingSpinner from "../components/LoadingSpinner";
 import DataTable from "../components/DataTable";
 import { useDeviceContext } from "../context/DeviceContext";
-import DeviceSelector from "../components/DeviceSelector";
 
 const appRouteColumns = [
   { field: "slaStatus", label: "Status" },
@@ -53,9 +52,21 @@ function formatNum(val) {
   return isNaN(n) ? val : n.toFixed(2);
 }
 
+function normalize(row) {
+  return {
+    ...row,
+    srcIp: row.srcIp || row["src-ip"] || "N/A",
+    dstIp: row.dstIp || row["dst-ip"] || "N/A",
+    application: row.application || row["app-probe-class-name"] || row.appName || "N/A",
+    localColor: row.localColor || row["local-color"] || "N/A",
+    remoteColor: row.remoteColor || row["remote-color"] || "N/A",
+    state: row.state || "N/A",
+    lossPercentage: row.lossPercentage ?? row["loss-percentage"] ?? "N/A",
+  };
+}
+
 export default function SLADashboard() {
   const { systemIp: urlSystemIp } = useParams();
-  const navigate = useNavigate();
   const { selectedDevice } = useDeviceContext();
   const [tab, setTab] = useState(0);
   const activeIp = urlSystemIp || (selectedDevice ? selectedDevice["system-ip"] : null);
@@ -66,29 +77,26 @@ export default function SLADashboard() {
 
   const isLoading = appRouteLoading || tunnelLoading;
 
-  const mapFlow = (f) => ({
-    ...f,
-    srcIp: f.srcIp || f["src-ip"],
-    dstIp: f.dstIp || f["dst-ip"],
-    application: f.application || f["app-probe-class-name"] || "—",
-    localColor: f.localColor || f["local-color"],
-    remoteColor: f.remoteColor || f["remote-color"],
-  });
-
   const flows = useMemo(() => {
-    if (liveFlows && Array.isArray(liveFlows) && liveFlows.length > 0) return liveFlows.map(mapFlow);
-    return (appRouteData?.flows || []).map(mapFlow);
+    if (liveFlows && Array.isArray(liveFlows) && liveFlows.length > 0) return liveFlows.map(normalize);
+    return (appRouteData?.flows || []).map(normalize);
   }, [liveFlows, appRouteData]);
 
-  const tunnels = tunnelData?.tunnels || [];
+  const tunnels = useMemo(() => {
+    return (tunnelData?.tunnels || []).map(normalize);
+  }, [tunnelData]);
 
   const renderSlaCell = (field, value, row) => {
     if (field === "slaStatus") {
       return <Chip label={value || "—"} size="small" color={statusColor[value] || "default"} variant="outlined" sx={{ fontWeight: 700, fontSize: "0.7rem" }} />;
     }
+    if (field === "state") {
+      const isUp = typeof value === "string" && value.toLowerCase() === "up";
+      return <Chip label={value || "N/A"} size="small" color={isUp ? "success" : "warning"} variant="outlined" sx={{ fontSize: "0.7rem" }} />;
+    }
     if (field === "latency" || field === "loss" || field === "jitter" || field === "lossPercentage") return formatNum(value);
-    if (field === "txPackets" || field === "rxPackets") return value?.toLocaleString() ?? "—";
-    return value ?? "—";
+    if (field === "txPackets" || field === "rxPackets") return value != null ? Number(value).toLocaleString() : "—";
+    return value ?? "N/A";
   };
 
   return (
@@ -98,10 +106,9 @@ export default function SLADashboard() {
           <Typography variant="h5">SLA &amp; Traffic Analysis</Typography>
           {sseConnected && <Chip icon={<DotIcon sx={{ fontSize: 10 }} />} label="Live" size="small" color="success" variant="outlined" />}
         </Box>
-        <DeviceSelector onSelect={(ip) => navigate(`/sla-dashboard/${ip}`)} />
       </Box>
 
-      {!activeIp && <Alert severity="info">Select a device to view SLA and traffic analysis.</Alert>}
+      {!activeIp && <Alert severity="info">Select a device from the global search bar to view SLA and traffic analysis.</Alert>}
       {isLoading && <LoadingSpinner message="Fetching traffic data..." />}
       {(appRouteError || tunnelError) && (
         <Alert severity="error" sx={{ mb: 2 }}>

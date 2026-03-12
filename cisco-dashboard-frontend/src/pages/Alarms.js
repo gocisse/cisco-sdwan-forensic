@@ -1,19 +1,22 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { Box, Typography, Alert, Chip, Button } from "@mui/material";
-import { Refresh as RefreshIcon } from "@mui/icons-material";
+import {
+  Refresh as RefreshIcon,
+  CheckCircleOutline as ActiveIcon,
+} from "@mui/icons-material";
 import useApiFetch from "../hooks/useApiFetch";
 import LoadingSpinner from "../components/LoadingSpinner";
 import DataTable from "../components/DataTable";
 
 const columns = [
-  { field: "type", label: "Severity" },
-  { field: "rule_name_display", label: "Alarm" },
+  { field: "severity", label: "Severity" },
+  { field: "alarm", label: "Alarm" },
   { field: "component", label: "Component" },
-  { field: "system_ip", label: "System IP" },
-  { field: "host_name", label: "Hostname" },
-  { field: "site_id", label: "Site ID" },
-  { field: "entry_time", label: "Time" },
-  { field: "active", label: "Active" },
+  { field: "systemIp", label: "System IP" },
+  { field: "hostName", label: "Hostname" },
+  { field: "siteId", label: "Site ID" },
+  { field: "entryTime", label: "Time" },
+  { field: "status", label: "Status" },
 ];
 
 const severityMap = {
@@ -23,8 +26,28 @@ const severityMap = {
   warning: "info",
 };
 
+function normalizeAlarm(row) {
+  return {
+    ...row,
+    severity: row.type || row.severity || "N/A",
+    alarm: row.rule_name_display || row.ruleName || row["rule-name-display"] || "N/A",
+    component: row.component || "N/A",
+    systemIp: row.system_ip || row["system-ip"] || row.systemIp || "N/A",
+    hostName: row.host_name || row["host-name"] || row.hostName || "N/A",
+    siteId: row.site_id || row["site-id"] || row.siteId || "N/A",
+    entryTime: row.entry_time || row["entry-time"] || row.entryTime || null,
+    status: row.active !== undefined ? (row.active ? "Active" : "Cleared") : (row.cleared ? "Cleared" : "Active"),
+  };
+}
+
 export default function Alarms() {
-  const { data: alarms, isLoading, error, refetch } = useApiFetch("/api/alarms");
+  const { data: rawAlarms, isLoading, error, refetch } = useApiFetch("/api/alarms");
+
+  const alarms = useMemo(() => {
+    if (!rawAlarms) return [];
+    const arr = Array.isArray(rawAlarms) ? rawAlarms : rawAlarms.data || [];
+    return arr.map(normalizeAlarm);
+  }, [rawAlarms]);
 
   if (isLoading) return <LoadingSpinner message="Fetching alarms..." />;
 
@@ -39,25 +62,31 @@ export default function Alarms() {
       {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
       <DataTable
         columns={columns}
-        rows={alarms || []}
-        defaultSort="entry_time"
+        rows={alarms}
+        defaultSort="entryTime"
         defaultOrder="desc"
         dense
         renderCell={(field, value, row) => {
-          if (field === "type") {
+          if (field === "severity") {
             const color = severityMap[(value || "").toLowerCase()] || "default";
             return <Chip label={value || "N/A"} size="small" color={color} variant="outlined" sx={{ fontWeight: 600, fontSize: "0.75rem" }} />;
           }
-          if (field === "entry_time") {
+          if (field === "entryTime") {
             return value ? new Date(value).toLocaleString() : "N/A";
           }
-          if (field === "active") {
-            return <Chip label={value ? "Active" : "Cleared"} size="small" color={value ? "error" : "default"} variant="outlined" sx={{ fontSize: "0.7rem" }} />;
+          if (field === "status") {
+            const isActive = value === "Active";
+            return (
+              <Chip
+                icon={isActive ? <ActiveIcon sx={{ fontSize: 14 }} /> : undefined}
+                label={value}
+                size="small"
+                color={isActive ? "success" : "default"}
+                variant="outlined"
+                sx={{ fontSize: "0.7rem" }}
+              />
+            );
           }
-          if (field === "rule_name_display") return value || row.ruleName || "N/A";
-          if (field === "system_ip") return value || row["system-ip"] || "N/A";
-          if (field === "host_name") return value || row["host-name"] || "N/A";
-          if (field === "site_id") return value || row["site-id"] || "N/A";
           return value ?? "N/A";
         }}
       />

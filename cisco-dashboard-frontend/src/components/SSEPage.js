@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React from "react";
 import {
   Box,
   Typography,
@@ -15,28 +15,19 @@ import {
 } from "@mui/material";
 import {
   FiberManualRecord as DotIcon,
-  Stop as StopIcon,
 } from "@mui/icons-material";
 import useSSE from "../hooks/useSSE";
-import DeviceSelector from "./DeviceSelector";
+import { useDeviceContext } from "../context/DeviceContext";
 
 export default function SSEPage({ title, eventPath, columns, renderCell }) {
-  const [activeIp, setActiveIp] = useState("");
+  const { selectedDevice } = useDeviceContext();
+  const activeIp = selectedDevice ? selectedDevice["system-ip"] : "";
 
-  const sseUrl = activeIp.trim()
-    ? `${eventPath}?system-ip=${encodeURIComponent(activeIp.trim())}`
+  const sseUrl = activeIp
+    ? `${eventPath}?system-ip=${encodeURIComponent(activeIp)}`
     : null;
 
   const { data: updates, isConnected, error, reconnect } = useSSE(sseUrl);
-
-  const handleConnect = (ip) => {
-    if (!ip) return;
-    setActiveIp(ip);
-  };
-
-  const handleDisconnect = () => {
-    setActiveIp("");
-  };
 
   const rows = Array.isArray(updates) ? updates : [];
 
@@ -52,13 +43,8 @@ export default function SSEPage({ title, eventPath, columns, renderCell }) {
             color={isConnected ? "success" : "default"}
             variant="outlined"
           />
-        </Box>
-        <Box sx={{ display: "flex", gap: 1, alignItems: "center", flexWrap: "wrap" }}>
-          <DeviceSelector onSelect={(ip) => handleConnect(ip)} />
-          {sseUrl && (
-            <Button variant="outlined" size="small" color="error" startIcon={<StopIcon />} onClick={handleDisconnect}>
-              Disconnect
-            </Button>
+          {activeIp && (
+            <Chip label={selectedDevice["host-name"] || activeIp} size="small" variant="outlined" sx={{ fontSize: "0.75rem" }} />
           )}
         </Box>
       </Box>
@@ -72,7 +58,7 @@ export default function SSEPage({ title, eventPath, columns, renderCell }) {
       {rows.length === 0 ? (
         <Alert severity="info">
           {!sseUrl
-            ? "Select a device and connect to start receiving live data."
+            ? "Select a device from the global search bar to start receiving live data."
             : "Waiting for data..."}
         </Alert>
       ) : (

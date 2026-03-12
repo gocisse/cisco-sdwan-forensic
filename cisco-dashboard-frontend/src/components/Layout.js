@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { useNavigate, useLocation, Outlet } from "react-router-dom";
 import {
   AppBar,
+  Autocomplete,
   Box,
   Collapse,
   Divider,
@@ -11,6 +12,7 @@ import {
   ListItemButton,
   ListItemIcon,
   ListItemText,
+  TextField,
   Toolbar,
   Typography,
   Chip,
@@ -35,7 +37,9 @@ import {
   Menu as MenuIcon,
   Refresh as RefreshIcon,
   FiberManualRecord as DotIcon,
+  Search as SearchIcon,
 } from "@mui/icons-material";
+import { useDeviceContext } from "../context/DeviceContext";
 import logo from "../assets/logo.png";
 
 const DRAWER_WIDTH = 260;
@@ -133,6 +137,7 @@ export default function Layout() {
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [openSections, setOpenSections] = useState({ Dashboard: true, Troubleshoot: true });
+  const { devices, selectedDevice, setSelectedDevice, isLoading: devicesLoading } = useDeviceContext();
 
   const toggleSection = (label) => {
     setOpenSections((prev) => ({ ...prev, [label]: !prev[label] }));
@@ -236,7 +241,7 @@ export default function Layout() {
       <Divider sx={{ borderColor: "rgba(255,255,255,0.1)" }} />
       <Box sx={{ px: 2.5, py: 1.5 }}>
         <Typography variant="caption" sx={{ color: "rgba(255,255,255,0.4)" }}>
-          v1.0.0 &middot; Cisco SD-WAN Forensic
+          v1.0.0.1 &middot; Cisco SD-WAN Forensic
         </Typography>
       </Box>
     </Box>
@@ -292,14 +297,62 @@ export default function Layout() {
             >
               <MenuIcon />
             </IconButton>
-            <Typography variant="h6" sx={{ flexGrow: 1, color: "text.primary", fontSize: "1.1rem" }}>
+            <Typography variant="h6" sx={{ color: "text.primary", fontSize: "1.1rem", mr: 2, whiteSpace: "nowrap" }}>
               Cisco-Sdwan-Forensic
             </Typography>
+            <Autocomplete
+              size="small"
+              options={devices}
+              loading={devicesLoading}
+              value={selectedDevice}
+              onChange={(_, newValue) => {
+                setSelectedDevice(newValue);
+                if (newValue) {
+                  const ip = newValue["system-ip"];
+                  const path = location.pathname;
+                  if (path.startsWith("/sla-dashboard")) navigate(`/sla-dashboard/${ip}`);
+                  else if (path.startsWith("/policy-forensics")) navigate(`/policy-forensics/${ip}`);
+                  else if (path.startsWith("/templates")) navigate(`/templates/${ip}`);
+                  else if (path.startsWith("/realtime/")) {
+                    const sub = path.split("/realtime/")[1]?.split("/")[0];
+                    if (sub) navigate(`/realtime/${sub}/${ip}`);
+                  }
+                  else if (path.startsWith("/edgepolicy/")) {
+                    const sub = path.split("/edgepolicy/")[1]?.split("/")[0];
+                    if (sub) navigate(`/edgepolicy/${sub}/${ip}`);
+                  }
+                }
+              }}
+              getOptionLabel={(opt) =>
+                opt ? `${opt["host-name"] || "Unnamed"} (${opt["system-ip"]})` : ""
+              }
+              isOptionEqualToValue={(opt, val) => opt?.["system-ip"] === val?.["system-ip"]}
+              filterOptions={(options, { inputValue }) => {
+                const q = inputValue.toLowerCase();
+                return options.filter(
+                  (d) =>
+                    (d["system-ip"] || "").toLowerCase().includes(q) ||
+                    (d["host-name"] || "").toLowerCase().includes(q)
+                );
+              }}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  placeholder="Search device by IP or hostname..."
+                  InputProps={{
+                    ...params.InputProps,
+                    startAdornment: <SearchIcon sx={{ color: "text.secondary", mr: 0.5, fontSize: 20 }} />,
+                  }}
+                />
+              )}
+              sx={{ flexGrow: 1, maxWidth: 400, mr: 2 }}
+              noOptionsText="No devices found"
+            />
             <Chip
               icon={<DotIcon sx={{ fontSize: 10 }} />}
-              label="Connected"
+              label={selectedDevice ? selectedDevice["host-name"] || selectedDevice["system-ip"] : "No device"}
               size="small"
-              color="success"
+              color={selectedDevice ? "success" : "default"}
               variant="outlined"
               sx={{ mr: 1 }}
             />
