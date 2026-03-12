@@ -18,88 +18,94 @@ import (
 // ======================
 
 // BfdState represents the BFD state data.
+// Uses json.Number for numeric fields because vManage returns them as
+// either JSON strings or JSON numbers depending on the device/version.
 type BfdState struct {
-	SrcIP             string `json:"src-ip"`
-	DstIP             string `json:"dst-ip"`
-	VdeviceName       string `json:"vdevice-name"`
-	Color             string `json:"color"`
-	SrcPort           int    `json:"src-port"`
-	SystemIP          string `json:"system-ip"`
-	DstPort           int    `json:"dst-port"`
-	SiteID            int    `json:"site-id"`
-	VdeviceHostName   string `json:"vdevice-host-name"`
-	LocalColor        string `json:"local-color"`
-	LocalIfDesc       string `json:"local-if-desc"`
-	VmanageSystemIP   string `json:"vmanage-system-ip"`
-	LocalRemoteIfname string `json:"local-remote-ifname"`
-	Proto             string `json:"proto"`
-	Lastupdated       int64  `json:"lastupdated"`
-	RemoteIfDesc      string `json:"remote-if-desc"`
-	State             string `json:"state"`
-	TxInterval        int    `json:"tx-interval"`
-	UptimeDate        int64  `json:"uptime-date"`
+	SrcIP             string      `json:"src-ip"`
+	DstIP             string      `json:"dst-ip"`
+	VdeviceName       string      `json:"vdevice-name"`
+	Color             string      `json:"color"`
+	SrcPort           json.Number `json:"src-port"`
+	SystemIP          string      `json:"system-ip"`
+	DstPort           json.Number `json:"dst-port"`
+	SiteID            json.Number `json:"site-id"`
+	VdeviceHostName   string      `json:"vdevice-host-name"`
+	LocalColor        string      `json:"local-color"`
+	LocalIfDesc       string      `json:"local-if-desc"`
+	VmanageSystemIP   string      `json:"vmanage-system-ip"`
+	LocalRemoteIfname string      `json:"local-remote-ifname"`
+	Proto             string      `json:"proto"`
+	Lastupdated       json.Number `json:"lastupdated"`
+	RemoteIfDesc      string      `json:"remote-if-desc"`
+	State             string      `json:"state"`
+	TxInterval        json.Number `json:"tx-interval"`
+	UptimeDate        json.Number `json:"uptime-date"`
 }
 
 // PortsInUse represents the interface ports in use data.
+// Uses json.Number for numeric fields because vManage returns them as
+// either JSON strings or JSON numbers depending on the device/version.
 type PortsInUse struct {
-	VdeviceName     string `json:"vdevice-name"`
-	RxErrors        int    `json:"rx-errors"`
-	TxKbps          int    `json:"tx-kbps"`
-	IfAdminStatus   string `json:"if-admin-status"`
-	TCPMssAdjust    string `json:"tcp-mss-adjust"`
-	TxErrors        int    `json:"tx-errors"`
-	TxPps           int    `json:"tx-pps"`
-	Ifname          string `json:"ifname"`
-	RxPps           int    `json:"rx-pps"`
-	AfType          string `json:"af-type"`
-	ShapingRate     int    `json:"shaping-rate"`
-	IfOperStatus    string `json:"if-oper-status"`
-	Ifindex         int    `json:"ifindex"`
-	IfTrackerStatus string `json:"if-tracker-status"`
-	NumFlaps        string `json:"num-flaps"`
-	RxPackets       int    `json:"rx-packets"`
-	VpnID           string `json:"vpn-id"`
-	VdeviceHostName string `json:"vdevice-host-name"`
-	Mtu             string `json:"mtu"`
-	RxDrops         int    `json:"rx-drops"`
-	TxDrops         int    `json:"tx-drops"`
-	Ipv6Address     string `json:"ipv6-address"`
-	Hwaddr          string `json:"hwaddr"`
-	IPAddress       string `json:"ip-address"`
-	VdeviceDataKey  string `json:"vdevice-dataKey"`
-	TxOctets        int    `json:"tx-octets"`
-	TxPackets       int    `json:"tx-packets"`
-	RxOctets        int    `json:"rx-octets"`
-	RxKbps          int    `json:"rx-kbps"`
-	Lastupdated     int64  `json:"lastupdated"`
-	PortType        string `json:"port-type"`
-	EncapType       string `json:"encap-type"`
+	VdeviceName     string      `json:"vdevice-name"`
+	RxErrors        json.Number `json:"rx-errors"`
+	TxKbps          json.Number `json:"tx-kbps"`
+	IfAdminStatus   string      `json:"if-admin-status"`
+	TCPMssAdjust    string      `json:"tcp-mss-adjust"`
+	TxErrors        json.Number `json:"tx-errors"`
+	TxPps           json.Number `json:"tx-pps"`
+	Ifname          string      `json:"ifname"`
+	RxPps           json.Number `json:"rx-pps"`
+	AfType          string      `json:"af-type"`
+	ShapingRate     json.Number `json:"shaping-rate"`
+	IfOperStatus    string      `json:"if-oper-status"`
+	Ifindex         json.Number `json:"ifindex"`
+	IfTrackerStatus string      `json:"if-tracker-status"`
+	NumFlaps        json.Number `json:"num-flaps"`
+	RxPackets       json.Number `json:"rx-packets"`
+	VpnID           string      `json:"vpn-id"`
+	VdeviceHostName string      `json:"vdevice-host-name"`
+	Mtu             json.Number `json:"mtu"`
+	RxDrops         json.Number `json:"rx-drops"`
+	TxDrops         json.Number `json:"tx-drops"`
+	Ipv6Address     string      `json:"ipv6-address"`
+	Hwaddr          string      `json:"hwaddr"`
+	IPAddress       string      `json:"ip-address"`
+	VdeviceDataKey  string      `json:"vdevice-dataKey"`
+	TxOctets        json.Number `json:"tx-octets"`
+	TxPackets       json.Number `json:"tx-packets"`
+	RxOctets        json.Number `json:"rx-octets"`
+	RxKbps          json.Number `json:"rx-kbps"`
+	Lastupdated     json.Number `json:"lastupdated"`
+	PortType        string      `json:"port-type"`
+	EncapType       string      `json:"encap-type"`
 }
 
 // PortStats represents the interface port statistics data.
+// Uses json.Number for numeric fields because vManage returns them as
+// either JSON strings or JSON numbers depending on the device/version.
 type PortStats struct {
-	VdeviceName     string `json:"vdevice-name"`
-	RxPackets       string `json:"rx-packets"`
-	RxErrors        string `json:"rx-errors"`
-	TxKbps          string `json:"tx-kbps"`
-	TxErrors        string `json:"tx-errors"`
-	TxPps           string `json:"tx-pps"`
-	VpnID           string `json:"vpn-id"`
-	Dot1XRxPkts     string `json:"dot1x-rx-pkts"`
-	VdeviceHostName string `json:"vdevice-host-name"`
-	TxDrops         string `json:"tx-drops"`
-	Ipv6Address     string `json:"ipv6-address"`
-	Dot1XTxPkts     string `json:"dot1x-tx-pks"`
-	IPAddress       string `json:"ip-address"`
-	VdeviceDataKey  string `json:"vdevice-dataKey"`
-	Ifname          string `json:"ifname"`
-	RxPps           string `json:"rx-pps"`
-	TxOctets        string `json:"tx-octets"`
-	TxPackets       string `json:"tx-packets"`
-	AfType          string `json:"af-type"`
-	RxOctets        string `json:"rx-octets"`
-	RxKbps          string `json:"rx-kbps"`
-	Lastupdated     int64  `json:"lastupdated"`
+	VdeviceName     string      `json:"vdevice-name"`
+	RxPackets       json.Number `json:"rx-packets"`
+	RxErrors        json.Number `json:"rx-errors"`
+	TxKbps          json.Number `json:"tx-kbps"`
+	TxErrors        json.Number `json:"tx-errors"`
+	TxPps           json.Number `json:"tx-pps"`
+	VpnID           string      `json:"vpn-id"`
+	Dot1XRxPkts     json.Number `json:"dot1x-rx-pkts"`
+	VdeviceHostName string      `json:"vdevice-host-name"`
+	TxDrops         json.Number `json:"tx-drops"`
+	Ipv6Address     string      `json:"ipv6-address"`
+	Dot1XTxPkts     json.Number `json:"dot1x-tx-pks"`
+	IPAddress       string      `json:"ip-address"`
+	VdeviceDataKey  string      `json:"vdevice-dataKey"`
+	Ifname          string      `json:"ifname"`
+	RxPps           json.Number `json:"rx-pps"`
+	TxOctets        json.Number `json:"tx-octets"`
+	TxPackets       json.Number `json:"tx-packets"`
+	AfType          string      `json:"af-type"`
+	RxOctets        json.Number `json:"rx-octets"`
+	RxKbps          json.Number `json:"rx-kbps"`
+	Lastupdated     json.Number `json:"lastupdated"`
 }
 
 // ======================

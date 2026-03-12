@@ -294,6 +294,12 @@ func (c *APIClient) Get(endpoint string) ([]byte, error) {
 			return bodyBytes, nil
 		}
 
+		// Don't retry on 404 — resource doesn't exist (e.g. deleted policy definition)
+		if resp.StatusCode == http.StatusNotFound {
+			bodyBytes, _ := io.ReadAll(resp.Body)
+			return nil, fmt.Errorf("404 Not Found: %s (body: %s)", endpoint, string(bodyBytes))
+		}
+
 		// Log non-success responses
 		bodyBytes, _ := io.ReadAll(resp.Body)
 		log.Printf("❌ GET %s failed: %s, Body: %s", endpoint, resp.Status, string(bodyBytes))
