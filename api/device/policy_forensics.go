@@ -57,9 +57,11 @@ type CentralPolicyMatch struct {
 
 // PolicySequenceInfo holds simplified sequence match/action info.
 type PolicySequenceInfo struct {
-	SequenceName string `json:"sequenceName"`
-	SequenceType string `json:"sequenceType"`
-	BaseAction   string `json:"baseAction"`
+	SequenceName string            `json:"sequenceName"`
+	SequenceType string            `json:"sequenceType"`
+	BaseAction   string            `json:"baseAction"`
+	Match        map[string]string `json:"match,omitempty"`
+	Actions      map[string]string `json:"actions,omitempty"`
 }
 
 // CentralPolicyResponse is the consolidated response for GET /api/device/{system-ip}/policy/centralized.
@@ -106,8 +108,15 @@ func FetchLocalPolicy(apiClient *utils.APIClient) http.HandlerFunc {
 			return
 		}
 
+		// Resolve device UUID for vManage API calls
+		deviceID := dev.DeviceID
+		if deviceID == "" {
+			deviceID = systemIP
+		}
+		log.Printf("📡 Local policy: system-ip=%s → deviceId=%s", systemIP, deviceID)
+
 		// Fetch ACLs
-		acls := fetchLocalPolicyItems(apiClient, systemIP, "dataservice/device/policy/accesslistnames",
+		acls := fetchLocalPolicyItems(apiClient, deviceID, "dataservice/device/policy/accesslistnames",
 			func(raw json.RawMessage) []LocalPolicyEntry {
 				var items []struct {
 					Name      string `json:"aclName"`
@@ -128,7 +137,7 @@ func FetchLocalPolicy(apiClient *utils.APIClient) http.HandlerFunc {
 			})
 
 		// Fetch QoS maps
-		qos := fetchLocalPolicyItems(apiClient, systemIP, "dataservice/device/policy/qosmapinfo",
+		qos := fetchLocalPolicyItems(apiClient, deviceID, "dataservice/device/policy/qosmapinfo",
 			func(raw json.RawMessage) []LocalPolicyEntry {
 				var items []struct {
 					Name      string `json:"qosMapName"`
@@ -149,7 +158,7 @@ func FetchLocalPolicy(apiClient *utils.APIClient) http.HandlerFunc {
 			})
 
 		// Fetch policers
-		policers := fetchLocalPolicyItems(apiClient, systemIP, "dataservice/device/policer",
+		policers := fetchLocalPolicyItems(apiClient, deviceID, "dataservice/device/policer",
 			func(raw json.RawMessage) []LocalPolicyEntry {
 				log.Printf("\U0001f50d Raw policer data for %s: %s", systemIP, string(raw))
 				var items []struct {
@@ -178,7 +187,7 @@ func FetchLocalPolicy(apiClient *utils.APIClient) http.HandlerFunc {
 			})
 
 		// Fetch zone-based firewall sessions (may not exist on all devices)
-		zbfw := fetchLocalPolicyItems(apiClient, systemIP, "dataservice/device/policy/zonebfwdp/sessions",
+		zbfw := fetchLocalPolicyItems(apiClient, deviceID, "dataservice/device/policy/zonebfwdp/sessions",
 			func(raw json.RawMessage) []LocalPolicyEntry {
 				var items []struct {
 					SrcZone string `json:"src-zone"`
@@ -224,11 +233,11 @@ func FetchLocalPolicy(apiClient *utils.APIClient) http.HandlerFunc {
 // maps the raw JSON data array into LocalPolicyEntry items using a mapper function.
 func fetchLocalPolicyItems(
 	apiClient *utils.APIClient,
-	systemIP string,
+	deviceID string,
 	endpoint string,
 	mapper func(json.RawMessage) []LocalPolicyEntry,
 ) []LocalPolicyEntry {
-	rawData, err := apiClient.Get(fmt.Sprintf("%s?deviceId=%s", endpoint, systemIP))
+	rawData, err := apiClient.Get(fmt.Sprintf("%s?deviceId=%s", endpoint, deviceID))
 	if err != nil {
 		log.Printf("Local policy fetch warning (%s): %v", endpoint, err)
 		return []LocalPolicyEntry{}
@@ -308,6 +317,12 @@ func FetchCentralizedPolicy(apiClient *utils.APIClient) http.HandlerFunc {
 		var dataPolicies, controlPolicies, appPolicies []CentralPolicyMatch
 
 		for _, pol := range policyEnvelope.Data {
+			// Filter: only include active policies
+			if !pol.IsPolicyActivated {
+				log.Printf("⏭️ Skipping inactive policy %q", pol.PolicyName)
+				continue
+			}
+
 			// Parse the embedded policyDefinition JSON string
 			// vManage returns siteLists as a plain string array ["uuid1", "uuid2"]
 			var def struct {
@@ -455,7 +470,8 @@ func matchesSiteEntry(entry, siteID string) bool {
 	return false
 }
 
-// fetchDefinitionSequences fetches a policy definition and extracts sequence names/actions.
+// fetchDefinitionSequences fetches a policy definition and extracts sequence names/actions
+// including match conditions and action parameters for the Policy Impact Analysis view.
 func fetchDefinitionSequences(apiClient *utils.APIClient, definitionID, defType string) []PolicySequenceInfo {
 	if definitionID == "" {
 		return nil
@@ -469,22 +485,71 @@ func fetchDefinitionSequences(apiClient *utils.APIClient, definitionID, defType 
 	}
 
 	var defBody struct {
-		Sequences []struct {
-			SequenceName string `json:"sequenceName"`
-			SequenceType string `json:"sequenceType"`
-			BaseAction   string `json:"baseAction"`
-		} `json:"sequences"`
+		Sequences []json.RawMessage `json:"sequences"`
 	}
 	if err := json.Unmarshal(rawDef, &defBody); err != nil {
 		return nil
 	}
 
 	seqs := make([]PolicySequenceInfo, 0, len(defBody.Sequences))
-	for _, s := range defBody.Sequences {
+	for _, rawSeq := range defBody.Sequences {
+		var s struct {
+			SequenceName string `json:"sequenceName"`
+			SequenceType string `json:"sequenceType"`
+			BaseAction   string `json:"baseAction"`
+			Match        struct {
+				Entries []struct {
+					Field string `json:"field"`
+					Ref   string `json:"ref"`
+					Value string `json:"value"`
+				} `json:"entries"`
+			} `json:"match"`
+			Actions []struct {
+				Type      string `json:"type"`
+				Parameter []struct {
+					Field string `json:"field"`
+					Ref   string `json:"ref"`
+					Value string `json:"value"`
+				} `json:"parameter"`
+			} `json:"actions"`
+		}
+		if err := json.Unmarshal(rawSeq, &s); err != nil {
+			continue
+		}
+
+		matchMap := make(map[string]string)
+		for _, e := range s.Match.Entries {
+			val := e.Value
+			if val == "" {
+				val = e.Ref
+			}
+			if e.Field != "" && val != "" {
+				matchMap[e.Field] = val
+			}
+		}
+
+		actionMap := make(map[string]string)
+		for _, a := range s.Actions {
+			if a.Type != "" {
+				actionMap["type"] = a.Type
+			}
+			for _, p := range a.Parameter {
+				val := p.Value
+				if val == "" {
+					val = p.Ref
+				}
+				if p.Field != "" && val != "" {
+					actionMap[p.Field] = val
+				}
+			}
+		}
+
 		seqs = append(seqs, PolicySequenceInfo{
 			SequenceName: s.SequenceName,
 			SequenceType: s.SequenceType,
 			BaseAction:   s.BaseAction,
+			Match:        matchMap,
+			Actions:      actionMap,
 		})
 	}
 	return seqs

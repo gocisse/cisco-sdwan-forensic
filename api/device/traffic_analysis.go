@@ -53,13 +53,13 @@ type AppRouteEntry struct {
 
 // AppRouteResponse is the response for GET /api/device/{system-ip}/app-route.
 type AppRouteResponse struct {
-	SystemIP     string          `json:"systemIp"`
-	HostName     string          `json:"hostName"`
-	Flows        []AppRouteEntry `json:"flows"`
-	TotalFlows   int             `json:"totalFlows"`
-	CriticalCnt  int             `json:"criticalCount"`
-	WarningCnt   int             `json:"warningCount"`
-	OkCnt        int             `json:"okCount"`
+	SystemIP    string          `json:"systemIp"`
+	HostName    string          `json:"hostName"`
+	Flows       []AppRouteEntry `json:"flows"`
+	TotalFlows  int             `json:"totalFlows"`
+	CriticalCnt int             `json:"criticalCount"`
+	WarningCnt  int             `json:"warningCount"`
+	OkCnt       int             `json:"okCount"`
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -119,9 +119,16 @@ func FetchAppRoute(apiClient *utils.APIClient) http.HandlerFunc {
 			return
 		}
 
-		rawData, err := apiClient.Get(fmt.Sprintf("dataservice/device/app-route/statistics?deviceId=%s", systemIP))
+		// vManage requires the device UUID, not the system-ip
+		deviceID := dev.DeviceID
+		if deviceID == "" {
+			deviceID = systemIP // fallback for older vManage versions
+		}
+		log.Printf("📡 App-route: system-ip=%s → deviceId=%s", systemIP, deviceID)
+
+		rawData, err := apiClient.Get(fmt.Sprintf("dataservice/device/app-route/statistics?deviceId=%s", deviceID))
 		if err != nil {
-			log.Printf("App-route fetch error for %s: %v", systemIP, err)
+			log.Printf("App-route fetch error for %s (deviceId=%s): %v", systemIP, deviceID, err)
 			middleware.WriteError(w, http.StatusBadGateway, "VMANAGE_ERROR", "Failed to fetch app-route stats from vManage")
 			return
 		}
@@ -236,9 +243,16 @@ func FetchTunnelHealth(apiClient *utils.APIClient) http.HandlerFunc {
 			return
 		}
 
-		rawData, err := apiClient.Get(fmt.Sprintf("dataservice/device/tunnel/statistics?deviceId=%s", systemIP))
+		// vManage requires the device UUID, not the system-ip
+		deviceID := dev.DeviceID
+		if deviceID == "" {
+			deviceID = systemIP // fallback for older vManage versions
+		}
+		log.Printf("📡 Tunnel health: system-ip=%s → deviceId=%s", systemIP, deviceID)
+
+		rawData, err := apiClient.Get(fmt.Sprintf("dataservice/device/tunnel/statistics?deviceId=%s", deviceID))
 		if err != nil {
-			log.Printf("Tunnel stats fetch error for %s: %v", systemIP, err)
+			log.Printf("Tunnel stats fetch error for %s (deviceId=%s): %v", systemIP, deviceID, err)
 			middleware.WriteError(w, http.StatusBadGateway, "VMANAGE_ERROR", "Failed to fetch tunnel stats from vManage")
 			return
 		}

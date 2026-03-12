@@ -1,10 +1,14 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { useParams } from "react-router-dom";
 import {
+  Accordion,
+  AccordionDetails,
+  AccordionSummary,
   Box,
   Card,
   CardContent,
   Chip,
+  Divider,
   Grid,
   Paper,
   Typography,
@@ -19,10 +23,64 @@ import {
   AltRoute as RouteIcon,
   DeviceHub as HubIcon,
   ArrowForward as ArrowIcon,
+  ExpandMore as ExpandMoreIcon,
+  AccountTree as TreeIcon,
+  Layers as LayersIcon,
+  Info as InfoIcon,
 } from "@mui/icons-material";
 import useApiFetch from "../hooks/useApiFetch";
 import LoadingSpinner from "../components/LoadingSpinner";
 import { useDeviceContext } from "../context/DeviceContext";
+
+// ── Friendly labels for template types ──
+const templateTypeLabel = {
+  "cisco_vpn": "VPN",
+  "cisco_banner": "Banner",
+  "cedge_aaa": "AAA",
+  "cisco_system": "System",
+  "cisco_logging": "Logging",
+  "cisco_bfd": "BFD",
+  "cisco_omp": "OMP",
+  "cisco_security": "Security",
+  "cisco_ntp": "NTP",
+  "cisco_snmp": "SNMP",
+  "cedge_global": "Global Settings",
+  "cisco_vpn_interface": "VPN Interface",
+  "cisco_vpn_interface_ipsec": "IPsec Tunnel",
+  "vpn-vedge-interface": "vEdge Interface",
+};
+
+// ── Friendly labels for match/action field names ──
+const fieldLabel = {
+  "sourceDataPrefixList": "Source Prefix",
+  "destinationDataPrefixList": "Dest Prefix",
+  "sourceIp": "Source IP",
+  "destinationIp": "Dest IP",
+  "sourcePort": "Source Port",
+  "destinationPort": "Dest Port",
+  "protocol": "Protocol",
+  "dscp": "DSCP",
+  "app": "Application",
+  "appList": "App List",
+  "dnsAppList": "DNS App",
+  "dns": "DNS",
+  "packetLength": "Pkt Length",
+  "plp": "PLP",
+  "trafficTo": "Traffic To",
+  "localTlocColor": "Local TLOC Color",
+  "preferredColorGroup": "Preferred Color",
+  "set": "Set",
+  "nat": "NAT",
+  "redirect": "Redirect",
+  "log": "Log",
+  "count": "Counter",
+  "cflowd": "Cflowd",
+  "tcpOptimization": "TCP Opt",
+  "lossCorrection": "FEC",
+  "sig": "SIG Redirect",
+};
+
+function fmtField(f) { return fieldLabel[f] || f.replace(/([A-Z])/g, " $1").replace(/^./, (s) => s.toUpperCase()); }
 
 export default function PolicyForensics() {
   const { systemIp: urlSystemIp } = useParams();
@@ -31,21 +89,76 @@ export default function PolicyForensics() {
 
   const { data: localData, isLoading: localLoading, error: localError } = useApiFetch(activeIp ? `/api/device/${activeIp}/policy/local` : null);
   const { data: centralData, isLoading: centralLoading, error: centralError } = useApiFetch(activeIp ? `/api/device/${activeIp}/policy/centralized` : null);
-  const isLoading = localLoading || centralLoading;
+  const { data: templateData, isLoading: templateLoading } = useApiFetch(activeIp ? `/api/device/${activeIp}/templates` : null);
+  const isLoading = localLoading || centralLoading || templateLoading;
   const localTotal = localData ? localData.totalCount : 0;
   const centralTotal = centralData ? centralData.totalCount : 0;
 
+  const trafficSummary = useMemo(() => {
+    if (!localData && !centralData) return [];
+    const lines = [];
+    const host = localData?.hostName || activeIp;
+    const site = localData?.siteId || centralData?.siteId || "N/A";
+
+    if (centralData?.dataPolicies?.length > 0) {
+      centralData.dataPolicies.forEach((p) => {
+        (p.sequences || []).forEach((seq) => {
+          const action = seq.baseAction || "accept";
+          const matchKeys = Object.keys(seq.match || {});
+          const actionKeys = Object.keys(seq.actions || {});
+          const matchStr = matchKeys.length > 0
+            ? matchKeys.map((k) => `${fmtField(k)}: ${seq.match[k]}`).join(", ")
+            : "all traffic";
+          const actionStr = actionKeys.length > 0
+            ? actionKeys.filter((k) => k !== "type").map((k) => `${fmtField(k)}=${seq.actions[k]}`).join(", ")
+            : action;
+          lines.push(`Data Policy "${p.policyName}" on Site ${site}: traffic matching [${matchStr}] → ${action}${actionStr !== action ? ` (${actionStr})` : ""}.`);
+        });
+      });
+    }
+    if (centralData?.appRoutePolicies?.length > 0) {
+      centralData.appRoutePolicies.forEach((p) => {
+        lines.push(`App-Route Policy "${p.policyName}" steers application traffic for Site ${site} based on SLA classes.`);
+      });
+    }
+    if (centralData?.controlPolicies?.length > 0) {
+      centralData.controlPolicies.forEach((p) => {
+        lines.push(`Control Policy "${p.policyName}" modifies OMP route advertisements for Site ${site}.`);
+      });
+    }
+    if ((localData?.accessLists || []).length > 0) {
+      const aclNames = localData.accessLists.map((a) => a.name).join(", ");
+      lines.push(`Local ACLs on ${host}: ${aclNames} — filtering traffic at the interface level.`);
+    }
+    if ((localData?.zoneFirewall || []).length > 0) {
+      lines.push(`Zone-Based Firewall active on ${host} — inter-zone traffic is inspected.`);
+    }
+    if ((localData?.qosMaps || []).length > 0) {
+      lines.push(`QoS Maps active on ${host} — traffic is classified and queued.`);
+    }
+    if (lines.length === 0) {
+      lines.push(`No active policies affecting ${host} (Site ${site}). Traffic flows based on default routing.`);
+    }
+    return lines;
+  }, [localData, centralData, activeIp]);
+
   return (
     <Box>
-      <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 1 }}>
-        <Typography variant="h5">Policy Forensics</Typography>
+      <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 0.5 }}>
+        <Typography variant="h5">Policy Impact Analysis</Typography>
+        {activeIp && (
+          <Box sx={{ display: "flex", gap: 0.5 }}>
+            <Chip label={`${centralTotal} Centralized`} size="small" color="primary" variant="outlined" />
+            <Chip label={`${localTotal} Local`} size="small" color="success" variant="outlined" />
+          </Box>
+        )}
       </Box>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-        What policies apply to this device and what do they do?
+        How do centralized and local policies work together on this device? What is the traffic impact?
       </Typography>
 
-      {!activeIp && <Alert severity="info">Select a device from the global search bar to analyze its policies.</Alert>}
-      {isLoading && <LoadingSpinner message="Analyzing policies..." />}
+      {!activeIp && <Alert severity="info">Select a device from the global search bar to trace its policy hierarchy.</Alert>}
+      {isLoading && <LoadingSpinner message="Tracing policy hierarchy..." />}
       {(localError || centralError) && (
         <Alert severity="error" sx={{ mb: 2 }}>
           {localError && <div>{localError}</div>}
@@ -55,22 +168,63 @@ export default function PolicyForensics() {
 
       {activeIp && !isLoading && (
         <>
+          {/* ── Policy Trace: Two-column layout ── */}
           <Grid container spacing={2} sx={{ mb: 2 }}>
-            {/* ── Local Policy (Device Template) ── */}
+
+            {/* ── Column A: Local Policy (Device Template) ── */}
             <Grid item xs={12} md={6}>
               <Card sx={{ borderTop: 3, borderColor: "success.main", height: "100%" }}>
-                <CardContent>
-                  <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 1 }}>
-                    <Typography variant="h6">Local Policy (Device Template)</Typography>
-                    <Chip label={`${localTotal} rules`} size="small" color="success" variant="outlined" />
+                <CardContent sx={{ pb: "16px !important" }}>
+                  <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 0.5 }}>
+                    <TreeIcon color="success" fontSize="small" />
+                    <Typography variant="h6">Local Policy</Typography>
                   </Box>
                   <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 2 }}>
-                    {localData?.hostName || activeIp} — Site {localData?.siteId || "N/A"}
+                    Device Template &amp; Feature Templates for {localData?.hostName || activeIp} (Site {localData?.siteId || "N/A"})
                   </Typography>
 
+                  {/* Device Template Hierarchy */}
+                  {templateData && (
+                    <Paper variant="outlined" sx={{ p: 1.5, mb: 2, borderLeft: 3, borderLeftColor: "success.main" }}>
+                      <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
+                        <LayersIcon sx={{ fontSize: 16, mr: 0.5, verticalAlign: "text-bottom" }} />
+                        {templateData.deviceTemplateName || "Unknown Template"}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1 }}>
+                        {templateData.deviceTemplateDescription || "Device template"}
+                      </Typography>
+                      {(templateData.featureTemplates || []).length > 0 && (
+                        <Box sx={{ pl: 1, borderLeft: 2, borderColor: "divider" }}>
+                          {templateData.featureTemplates.map((ft, i) => (
+                            <Box key={i} sx={{ py: 0.25 }}>
+                              <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+                                <Typography variant="caption" fontWeight={600}>{ft.templateName}</Typography>
+                                <Chip
+                                  label={templateTypeLabel[ft.templateType] || ft.templateType}
+                                  size="small"
+                                  variant="outlined"
+                                  sx={{ fontSize: "0.6rem", height: 16, color: "text.secondary" }}
+                                />
+                              </Box>
+                              {ft.subTemplates && ft.subTemplates.length > 0 && (
+                                <Box sx={{ pl: 2, borderLeft: 1, borderColor: "divider", ml: 1, mt: 0.25 }}>
+                                  {ft.subTemplates.map((st, j) => (
+                                    <Typography key={j} variant="caption" color="text.secondary" sx={{ display: "block" }}>
+                                      ↳ {st.templateName} ({templateTypeLabel[st.templateType] || st.templateType})
+                                    </Typography>
+                                  ))}
+                                </Box>
+                              )}
+                            </Box>
+                          ))}
+                        </Box>
+                      )}
+                    </Paper>
+                  )}
+
+                  {/* Local Policy Items */}
                   {localData && (
                     <Box>
-                      {/* Access Lists with action colors */}
                       <PolicySection title="Access Control Lists (ACLs)" icon={<ShieldIcon fontSize="small" />} items={localData.accessLists}
                         renderItem={(item, i) => (
                           <Box key={i} sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", py: 0.75, borderBottom: "1px solid", borderColor: "divider" }}>
@@ -85,25 +239,16 @@ export default function PolicyForensics() {
                           </Box>
                         )}
                       />
-
-                      {/* Zone-Based Firewall with action colors */}
                       <PolicySection title="Zone-Based Firewall" icon={<FireIcon fontSize="small" />} items={localData.zoneFirewall}
                         renderItem={(item, i) => (
                           <Box key={i} sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", py: 0.75, borderBottom: "1px solid", borderColor: "divider" }}>
                             <Box>
                               <Typography variant="body2" fontWeight={600}>{item.name}</Typography>
-                              {item.srcZone && (
-                                <Typography variant="caption" color="text.secondary">
-                                  {item.srcZone} → {item.dstZone}
-                                </Typography>
-                              )}
                             </Box>
                             <ActionChip action={item.defaultAction || item.action} />
                           </Box>
                         )}
                       />
-
-                      {/* QoS Maps */}
                       <PolicySection title="QoS Maps" icon={<BarChartIcon fontSize="small" />} items={localData.qosMaps}
                         renderItem={(item, i) => (
                           <Box key={i} sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", py: 0.75, borderBottom: "1px solid", borderColor: "divider" }}>
@@ -115,8 +260,6 @@ export default function PolicyForensics() {
                           </Box>
                         )}
                       />
-
-                      {/* Policers */}
                       <PolicySection title="Policers" icon={<TrafficIcon fontSize="small" />} items={localData.policers}
                         renderItem={(item, i) => (
                           <Box key={i} sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", py: 0.75, borderBottom: "1px solid", borderColor: "divider" }}>
@@ -135,23 +278,24 @@ export default function PolicyForensics() {
               </Card>
             </Grid>
 
-            {/* ── Centralized Policy (vSmart) ── */}
+            {/* ── Column B: Centralized Policy (vSmart) ── */}
             <Grid item xs={12} md={6}>
               <Card sx={{ borderTop: 3, borderColor: "primary.main", height: "100%" }}>
-                <CardContent>
-                  <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 1 }}>
-                    <Typography variant="h6">Centralized Policy (vSmart)</Typography>
-                    <Chip label={`${centralTotal} policies`} size="small" color="primary" variant="outlined" />
+                <CardContent sx={{ pb: "16px !important" }}>
+                  <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 0.5 }}>
+                    <HubIcon color="primary" fontSize="small" />
+                    <Typography variant="h6">Centralized Policy</Typography>
+                    <Chip label="Active Only" size="small" color="success" variant="filled" sx={{ fontSize: "0.65rem", height: 20, fontWeight: 700, ml: "auto" }} />
                   </Box>
                   <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 2 }}>
-                    Policies filtered for Site {centralData?.siteId || "N/A"}
+                    vSmart policies affecting Site {centralData?.siteId || "N/A"} — sequence flow shows Match → Action
                   </Typography>
 
                   {centralData && (
                     <Box>
-                      <CentralSection title="Data Policies" icon={<DescIcon fontSize="small" />} policies={centralData.dataPolicies} />
-                      <CentralSection title="Control Policies" icon={<HubIcon fontSize="small" />} policies={centralData.controlPolicies} />
-                      <CentralSection title="App-Route Policies" icon={<RouteIcon fontSize="small" />} policies={centralData.appRoutePolicies} />
+                      <CentralSection title="Data Policies" subtitle="Controls data-plane forwarding in VPN segments" icon={<DescIcon fontSize="small" />} policies={centralData.dataPolicies} />
+                      <CentralSection title="Control Policies" subtitle="Affects OMP route advertisements and routing" icon={<HubIcon fontSize="small" />} policies={centralData.controlPolicies} />
+                      <CentralSection title="App-Route Policies" subtitle="Application-aware routing with SLA classes" icon={<RouteIcon fontSize="small" />} policies={centralData.appRoutePolicies} />
                     </Box>
                   )}
                 </CardContent>
@@ -159,18 +303,26 @@ export default function PolicyForensics() {
             </Grid>
           </Grid>
 
-          <Paper variant="outlined" sx={{ p: 2, textAlign: "center" }}>
-            <Typography variant="body2">
-              <strong>Summary:</strong> Device <strong>{localData?.hostName || activeIp}</strong> (Site {localData?.siteId || "N/A"}) has{" "}
-              <Chip label={`${centralTotal} Centralized`} size="small" color="primary" sx={{ mx: 0.5 }} /> and{" "}
-              <Chip label={`${localTotal} Local`} size="small" color="success" sx={{ mx: 0.5 }} /> policies.
-            </Typography>
+          {/* ── Traffic Flow Impact Summary ── */}
+          <Paper variant="outlined" sx={{ p: 2, bgcolor: "rgba(25,118,210,0.04)", borderColor: "primary.main" }}>
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 1.5 }}>
+              <InfoIcon color="primary" fontSize="small" />
+              <Typography variant="subtitle1" fontWeight={700}>Traffic Flow Impact</Typography>
+            </Box>
+            <Divider sx={{ mb: 1.5 }} />
+            {trafficSummary.map((line, i) => (
+              <Typography key={i} variant="body2" sx={{ mb: 0.75, pl: 1, borderLeft: 2, borderColor: "primary.light", lineHeight: 1.6 }}>
+                {line}
+              </Typography>
+            ))}
           </Paper>
         </>
       )}
     </Box>
   );
 }
+
+/* ── Reusable Components ── */
 
 function ActionChip({ action }) {
   if (!action) return null;
@@ -192,7 +344,7 @@ function ActionChip({ action }) {
 function PolicySection({ title, icon, items, renderItem }) {
   const count = items ? items.length : 0;
   return (
-    <Box sx={{ mb: 2.5 }}>
+    <Box sx={{ mb: 2 }}>
       <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", bgcolor: "background.default", px: 1.5, py: 0.75, borderRadius: 1, mb: 0.5 }}>
         <Box sx={{ display: "flex", alignItems: "center", gap: 0.75 }}>
           {icon}
@@ -204,83 +356,116 @@ function PolicySection({ title, icon, items, renderItem }) {
         <Box sx={{ px: 1 }}>{items.map(renderItem)}</Box>
       ) : (
         <Typography variant="caption" color="text.secondary" sx={{ pl: 1.5, fontStyle: "italic" }}>
-          No {title.toLowerCase()} found.
+          None configured.
         </Typography>
       )}
     </Box>
   );
 }
 
-function CentralSection({ title, icon, policies }) {
+function CentralSection({ title, subtitle, icon, policies }) {
   const count = policies ? policies.length : 0;
   return (
-    <Box sx={{ mb: 2.5 }}>
+    <Box sx={{ mb: 2 }}>
       <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", bgcolor: "background.default", px: 1.5, py: 0.75, borderRadius: 1, mb: 0.5 }}>
-        <Box sx={{ display: "flex", alignItems: "center", gap: 0.75 }}>
-          {icon}
-          <Typography variant="subtitle2">{title}</Typography>
+        <Box>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 0.75 }}>
+            {icon}
+            <Typography variant="subtitle2">{title}</Typography>
+          </Box>
+          {subtitle && <Typography variant="caption" color="text.secondary">{subtitle}</Typography>}
         </Box>
         <Chip label={count} size="small" sx={{ fontWeight: 600, height: 22 }} />
       </Box>
       {count > 0 ? (
         policies.map((pol, i) => (
-          <Paper key={pol.policyId || i} variant="outlined" sx={{ p: 1.5, my: 0.75, borderLeft: 3, borderLeftColor: "primary.main" }}>
-            <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 0.75 }}>
-              <Typography variant="body2" fontWeight={700}>{pol.policyName}</Typography>
-              <Chip label={pol.isActive ? "Active" : "Inactive"} size="small" color={pol.isActive ? "success" : "warning"} variant="outlined" sx={{ fontSize: "0.7rem", height: 20 }} />
-            </Box>
-            <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 0.5 }}>Type: {pol.policyType}</Typography>
-
-            {pol.sequences && pol.sequences.length > 0 && (
-              <Box sx={{ mt: 1 }}>
-                {pol.sequences.map((seq, j) => (
-                  <SequenceRule key={j} seq={seq} index={j} />
-                ))}
+          <Accordion
+            key={pol.policyId || i}
+            defaultExpanded={i === 0}
+            disableGutters
+            elevation={0}
+            sx={{ border: 1, borderColor: "divider", borderRadius: "4px !important", mb: 0.75, "&:before": { display: "none" } }}
+          >
+            <AccordionSummary expandIcon={<ExpandMoreIcon />} sx={{ minHeight: 40, "& .MuiAccordionSummary-content": { my: 0.5 } }}>
+              <Box sx={{ display: "flex", alignItems: "center", gap: 1, width: "100%" }}>
+                <Typography variant="body2" fontWeight={700} sx={{ flexGrow: 1 }}>{pol.policyName}</Typography>
+                <Chip label={pol.policyType} size="small" variant="outlined" sx={{ fontSize: "0.65rem", height: 18 }} />
               </Box>
-            )}
-          </Paper>
+            </AccordionSummary>
+            <AccordionDetails sx={{ pt: 0, pb: 1 }}>
+              {pol.sequences && pol.sequences.length > 0 ? (
+                pol.sequences.map((seq, j) => (
+                  <SequenceFlowCard key={j} seq={seq} index={j} />
+                ))
+              ) : (
+                <Typography variant="caption" color="text.secondary" fontStyle="italic">No sequences defined (default action applies).</Typography>
+              )}
+            </AccordionDetails>
+          </Accordion>
         ))
       ) : (
         <Typography variant="caption" color="text.secondary" sx={{ pl: 1.5, fontStyle: "italic" }}>
-          No {title.toLowerCase()} affecting this site.
+          No active {title.toLowerCase()} for this site.
         </Typography>
       )}
     </Box>
   );
 }
 
-function SequenceRule({ seq, index }) {
+function SequenceFlowCard({ seq, index }) {
   const action = seq.baseAction || "N/A";
   const lower = action.toLowerCase();
   const isDrop = lower === "drop" || lower === "reject" || lower === "deny";
   const isAccept = lower === "accept" || lower === "forward" || lower === "permit";
   const actionColor = isDrop ? "#E53935" : isAccept ? "#43A047" : "#FF9800";
-  const actionBg = isDrop ? "rgba(229,57,53,0.08)" : isAccept ? "rgba(67,160,71,0.08)" : "rgba(255,152,0,0.08)";
+  const actionBg = isDrop ? "rgba(229,57,53,0.06)" : isAccept ? "rgba(67,160,71,0.06)" : "rgba(255,152,0,0.06)";
 
-  const matchParts = [];
-  if (seq.sourceDataPrefixList) matchParts.push(`Src: ${seq.sourceDataPrefixList}`);
-  if (seq.destinationDataPrefixList) matchParts.push(`Dst: ${seq.destinationDataPrefixList}`);
-  if (seq.sourceIp) matchParts.push(`Src: ${seq.sourceIp}`);
-  if (seq.destinationIp) matchParts.push(`Dst: ${seq.destinationIp}`);
-  if (seq.app) matchParts.push(`App: ${seq.app}`);
-  if (seq.sequenceType) matchParts.push(seq.sequenceType);
+  const matchEntries = Object.entries(seq.match || {});
+  const actionEntries = Object.entries(seq.actions || {}).filter(([k]) => k !== "type");
+  const actionType = seq.actions?.type;
 
   return (
-    <Box sx={{ display: "flex", alignItems: "center", gap: 1, py: 0.5, px: 1, mb: 0.5, borderRadius: 1, bgcolor: actionBg, flexWrap: "wrap" }}>
-      <Chip label={`#${index + 1}`} size="small" variant="outlined" sx={{ fontSize: "0.65rem", height: 18, fontWeight: 600 }} />
-      <Typography variant="caption" fontWeight={500} sx={{ flexShrink: 0 }}>
-        {seq.sequenceName || `Sequence ${index + 1}`}
-      </Typography>
-      {matchParts.length > 0 && (
-        <>
-          <Typography variant="caption" color="text.secondary">Match</Typography>
-          <Chip label={matchParts.join(", ")} size="small" variant="outlined" sx={{ fontSize: "0.65rem", height: 18 }} />
-        </>
-      )}
-      <ArrowIcon sx={{ fontSize: 14, color: "text.secondary" }} />
-      <Typography variant="caption" sx={{ fontWeight: 700, color: actionColor }}>
-        Action: {action}
-      </Typography>
-    </Box>
+    <Paper variant="outlined" sx={{ p: 1.25, mb: 0.75, bgcolor: actionBg, borderLeft: 3, borderLeftColor: actionColor }}>
+      <Box sx={{ display: "flex", alignItems: "center", gap: 0.75, mb: 0.5 }}>
+        <Chip label={`#${index + 1}`} size="small" sx={{ fontSize: "0.65rem", height: 18, fontWeight: 700 }} />
+        <Typography variant="body2" fontWeight={600}>
+          {seq.sequenceName || `Sequence ${index + 1}`}
+        </Typography>
+        {seq.sequenceType && (
+          <Chip label={seq.sequenceType} size="small" variant="outlined" sx={{ fontSize: "0.6rem", height: 16, ml: "auto" }} />
+        )}
+      </Box>
+
+      {/* Match → Action Flow */}
+      <Box sx={{ display: "flex", alignItems: "flex-start", gap: 1, flexWrap: "wrap" }}>
+        {/* Match box */}
+        <Paper variant="outlined" sx={{ px: 1, py: 0.5, bgcolor: "background.paper", minWidth: 120, flex: 1 }}>
+          <Typography variant="caption" color="text.secondary" fontWeight={600} sx={{ display: "block", mb: 0.25 }}>Match</Typography>
+          {matchEntries.length > 0 ? matchEntries.map(([k, v]) => (
+            <Typography key={k} variant="caption" sx={{ display: "block" }}>
+              <strong>{fmtField(k)}:</strong> {v}
+            </Typography>
+          )) : (
+            <Typography variant="caption" color="text.secondary" fontStyle="italic">All traffic</Typography>
+          )}
+        </Paper>
+
+        <ArrowIcon sx={{ fontSize: 20, color: actionColor, mt: 1.5, flexShrink: 0 }} />
+
+        {/* Action box */}
+        <Paper variant="outlined" sx={{ px: 1, py: 0.5, bgcolor: "background.paper", minWidth: 120, flex: 1 }}>
+          <Typography variant="caption" fontWeight={600} sx={{ display: "block", mb: 0.25, color: actionColor }}>
+            Action: {actionType || action}
+          </Typography>
+          {actionEntries.length > 0 ? actionEntries.map(([k, v]) => (
+            <Typography key={k} variant="caption" sx={{ display: "block" }}>
+              <strong>{fmtField(k)}:</strong> {v}
+            </Typography>
+          )) : (
+            <Typography variant="caption" color="text.secondary">{action}</Typography>
+          )}
+        </Paper>
+      </Box>
+    </Paper>
   );
 }
