@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -13,6 +14,128 @@ import (
 
 	"github.com/gorilla/mux"
 )
+
+// uuidRe matches UUID-format strings (8-4-4-4-12 hex).
+var uuidRe = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Policy List Resolver — UUID → Readable Name
+// ──────────────────────────────────────────────────────────────────────────────
+
+// policyListInfo holds the resolved name and sample entries for a policy list.
+type policyListInfo struct {
+	Name    string
+	Entries []string // first few entries for preview
+}
+
+// buildPolicyListResolver fetches common policy list types from vManage and
+// returns a map of listId (UUID) → policyListInfo with name + sample entries.
+func buildPolicyListResolver(apiClient *utils.APIClient) map[string]policyListInfo {
+	resolver := make(map[string]policyListInfo)
+
+	// List types to fetch: endpoint suffix → entry field names to extract
+	listTypes := []struct {
+		Endpoint    string
+		EntryFields []string // JSON field names within entries[] to display
+	}{
+		{"dataprefix", []string{"ipPrefix"}},
+		{"prefix", []string{"ipPrefix"}},
+		{"app", []string{"app", "appFamily"}},
+		{"site", []string{"siteId"}},
+		{"vpn", []string{"vpn"}},
+		{"sla", []string{"latency", "loss", "jitter"}},
+		{"color", []string{"color"}},
+		{"tloc", []string{"tloc", "color", "encap"}},
+		{"policer", []string{"rate", "burst"}},
+		{"dataprefixall", []string{"ipPrefix"}},
+	}
+
+	for _, lt := range listTypes {
+		endpoint := fmt.Sprintf("dataservice/template/policy/list/%s", lt.Endpoint)
+		rawData, err := apiClient.Get(endpoint)
+		if err != nil {
+			log.Printf("List resolver: skipping %s: %v", lt.Endpoint, err)
+			continue
+		}
+
+		var envelope struct {
+			Data []json.RawMessage `json:"data"`
+		}
+		if err := json.Unmarshal(rawData, &envelope); err != nil {
+			continue
+		}
+
+		for _, raw := range envelope.Data {
+			var item struct {
+				ListID  string            `json:"listId"`
+				Name    string            `json:"name"`
+				Entries []json.RawMessage `json:"entries"`
+			}
+			if err := json.Unmarshal(raw, &item); err != nil || item.ListID == "" {
+				continue
+			}
+
+			// Extract up to 3 sample entries for preview
+			var samples []string
+			for idx, entryRaw := range item.Entries {
+				if idx >= 3 {
+					break
+				}
+				var entryMap map[string]interface{}
+				if err := json.Unmarshal(entryRaw, &entryMap); err != nil {
+					continue
+				}
+				var parts []string
+				for _, field := range lt.EntryFields {
+					if v, ok := entryMap[field]; ok && v != nil {
+						parts = append(parts, fmt.Sprintf("%v", v))
+					}
+				}
+				if len(parts) > 0 {
+					samples = append(samples, strings.Join(parts, "/"))
+				}
+			}
+
+			resolver[item.ListID] = policyListInfo{
+				Name:    item.Name,
+				Entries: samples,
+			}
+		}
+	}
+
+	log.Printf("📋 Policy list resolver: loaded %d list mappings", len(resolver))
+	return resolver
+}
+
+// resolveUUID replaces a UUID value with "ListName [entry1, entry2, ...]" using the resolver.
+func resolveUUID(val string, resolver map[string]policyListInfo) string {
+	if !uuidRe.MatchString(val) {
+		return val
+	}
+	info, ok := resolver[val]
+	if !ok {
+		return val
+	}
+	if len(info.Entries) > 0 {
+		preview := strings.Join(info.Entries, ", ")
+		return fmt.Sprintf("%s [%s]", info.Name, preview)
+	}
+	return info.Name
+}
+
+// resolveSequenceUUIDs walks match and action maps of all sequences and resolves UUID refs.
+func resolveSequenceUUIDs(policies []CentralPolicyMatch, resolver map[string]policyListInfo) {
+	for i := range policies {
+		for j := range policies[i].Sequences {
+			for k, v := range policies[i].Sequences[j].Match {
+				policies[i].Sequences[j].Match[k] = resolveUUID(v, resolver)
+			}
+			for k, v := range policies[i].Sequences[j].Actions {
+				policies[i].Sequences[j].Actions[k] = resolveUUID(v, resolver)
+			}
+		}
+	}
+}
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Local Policy Structs
@@ -402,6 +525,12 @@ func FetchCentralizedPolicy(apiClient *utils.APIClient) http.HandlerFunc {
 		if appPolicies == nil {
 			appPolicies = []CentralPolicyMatch{}
 		}
+
+		// Resolve UUID references to readable list names
+		resolver := buildPolicyListResolver(apiClient)
+		resolveSequenceUUIDs(dataPolicies, resolver)
+		resolveSequenceUUIDs(controlPolicies, resolver)
+		resolveSequenceUUIDs(appPolicies, resolver)
 
 		total := len(dataPolicies) + len(controlPolicies) + len(appPolicies)
 
