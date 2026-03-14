@@ -82,8 +82,12 @@ func NewAPIClient(config Config) (*APIClient, error) {
 		Timeout:   60 * time.Second,
 		Transport: transport,
 	}
+	// Strip trailing slashes from BaseURL to prevent double-slash URLs
+	// e.g. "https://tenant.sdwan.cisco.com/" → "https://tenant.sdwan.cisco.com"
+	baseURL := strings.TrimRight(config.VManageURL, "/")
+
 	apiClient := &APIClient{
-		BaseURL:  config.VManageURL,
+		BaseURL:  baseURL,
 		Client:   client,
 		username: config.Username,
 		password: config.Password,
@@ -119,7 +123,20 @@ func NewAPIClient(config Config) (*APIClient, error) {
 	}
 
 	if err := apiClient.getXsrfToken(); err != nil {
-		return nil, fmt.Errorf("failed to retrieve XSRF token: %w", err)
+		// Some vManage instances (multi-tenant, 20.x+) reject the first token
+		// fetch if a stale session token exists. Retry with a fresh cookie jar.
+		log.Printf("⚠️ First XSRF token fetch failed: %v — retrying with fresh session...", err)
+
+		newJar, _ := cookiejar.New(nil)
+		apiClient.Client.Jar = newJar
+		apiClient.XsrfToken = ""
+
+		if err := apiClient.authenticate(config.Username, config.Password); err != nil {
+			return nil, fmt.Errorf("re-authentication failed after XSRF token error: %w", err)
+		}
+		if err := apiClient.getXsrfToken(); err != nil {
+			return nil, fmt.Errorf("failed to retrieve XSRF token (retry): %w", err)
+		}
 	}
 
 	return apiClient, nil
@@ -186,6 +203,11 @@ func (c *APIClient) getXsrfToken() error {
 	if err != nil {
 		return err
 	}
+	// Do NOT send any stale X-XSRF-TOKEN header when fetching a new token.
+	// Some vManage versions (multi-tenant, 20.x+) have a SessionTokenFilter
+	// that rejects requests if the header doesn't match the server-side token.
+	// On initial fetch there is no valid token yet, so omit the header entirely.
+	req.Header.Del("X-XSRF-TOKEN")
 
 	resp, err := c.Client.Do(req)
 	if err != nil {
