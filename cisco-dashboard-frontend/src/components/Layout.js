@@ -128,6 +128,7 @@ const navSections = [
       { label: "Live BFD", path: "/sse/bfd", icon: <AnalyticsIcon fontSize="small" /> },
       { label: "Live Interface Usage", path: "/sse/interface-usage" },
       { label: "Live Interface Stats", path: "/sse/interface-stats" },
+      { label: "Live App-Route", path: "/sse/app-route" },
     ],
   },
 ];

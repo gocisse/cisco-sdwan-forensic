@@ -26,6 +26,7 @@ import Tunnel from "./pages/RealTime/Tunnel";
 import SSEBfd from "./pages/SSEBfd";
 import SSEInterfaceUsage from "./pages/SSEInterfaceUsage";
 import SSEInterfaceStats from "./pages/SSEInterfaceStats";
+import SSEAppRoute from "./pages/SSEAppRoute";
 
 import TopologyPage from "./pages/Topology";
 import SiteTopology from "./pages/SiteTopology";
@@ -126,6 +127,7 @@ export default function App() {
               <Route path="/sse/bfd" element={<SSEBfd />} />
               <Route path="/sse/interface-usage" element={<SSEInterfaceUsage />} />
               <Route path="/sse/interface-stats" element={<SSEInterfaceStats />} />
+              <Route path="/sse/app-route" element={<SSEAppRoute />} />
             </Route>
           </Routes>
         </DeviceProvider>
