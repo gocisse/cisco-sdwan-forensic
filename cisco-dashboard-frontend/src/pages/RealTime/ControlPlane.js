@@ -17,18 +17,19 @@ const columns = [
   { field: "lastupdated", label: "Last Updated" },
 ];
 
-// vManage control/synced/connections returns kebab-case fields that may not
-// match what the table expects. Normalize each row to fill gaps.
+// vManage control/synced/connections returns fields in various naming
+// conventions (kebab-case, camelCase, or mixed). Normalize every row
+// so the DataTable columns always find data.
 function normalize(row) {
   return {
     ...row,
-    "peer": row["peer"] || row["peer-system-ip"] || row["system-ip"] || "N/A",
-    "type": row["type"] || row["peer-type"] || "N/A",
-    "uptime": row["uptime"] || row["up-time"] || row["uptimeDate"] || "N/A",
-    "vdevice-name": row["vdevice-name"] || row["host-name"] || row["vdevice-host-name"] || "N/A",
-    "state": row["state"] || "N/A",
-    "site-id": row["site-id"] || "N/A",
-    "domain-id": row["domain-id"] || "N/A",
+    "peer":         row["peer"] || row["peer-system-ip"] || row["peerSystemIp"] || row["system-ip"] || row["systemIp"] || "N/A",
+    "type":         row["type"] || row["peer-type"] || row["peerType"] || "N/A",
+    "uptime":       row["uptime"] || row["up-time"] || row["upTime"] || row["uptimeDate"] || row["lastupdated"] || "N/A",
+    "vdevice-name": row["vdevice-name"] || row["vdeviceName"] || row["host-name"] || row["hostName"] || row["vdevice-host-name"] || "N/A",
+    "state":        row["state"] || row["operState"] || "N/A",
+    "site-id":      row["site-id"] || row["siteId"] || "N/A",
+    "domain-id":    row["domain-id"] || row["domainId"] || "N/A",
   };
 }
 

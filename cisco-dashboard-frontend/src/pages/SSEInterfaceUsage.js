@@ -23,8 +23,10 @@ export default function SSEInterfaceUsage() {
       renderCell={(field, value) => {
         if (field === "if-admin-status" || field === "if-oper-status") {
           const raw = (value != null ? String(value) : "").trim().toLowerCase();
-          const isUp = raw === "up";
-          const isDown = raw === "down";
+          // vManage returns values like "if-state-up", "if-oper-state-ready",
+          // "if-state-down", "lower-layer-down" — use includes() not exact match.
+          const isUp = raw.includes("up") || raw.includes("ready");
+          const isDown = raw.includes("down") || raw.includes("error") || raw.includes("disabled");
           const color = isUp ? "success" : isDown ? "error" : "default";
           return (
             <Chip label={value || "—"} size="small" color={color} variant="outlined" sx={{ fontSize: "0.75rem" }} />
