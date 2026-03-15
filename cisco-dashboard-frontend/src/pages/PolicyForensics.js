@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import {
   Accordion,
@@ -31,6 +31,7 @@ import {
 import useApiFetch from "../hooks/useApiFetch";
 import LoadingSpinner from "../components/LoadingSpinner";
 import { useDeviceContext } from "../context/DeviceContext";
+import PolicyDrillDown from "../components/PolicyDrillDown";
 
 // ── Friendly labels for template types ──
 const templateTypeLabel = {
@@ -86,6 +87,14 @@ export default function PolicyForensics() {
   const { systemIp: urlSystemIp } = useParams();
   const { selectedDevice } = useDeviceContext();
   const activeIp = urlSystemIp || (selectedDevice ? selectedDevice["system-ip"] : null);
+  const [drillDown, setDrillDown] = useState({ open: false, type: "", id: "", name: "" });
+
+  const handlePolicyClick = (policyType, policyId, policyName) => {
+    setDrillDown({ open: true, type: policyType, id: policyId, name: policyName });
+  };
+  const handleDrillDownClose = () => {
+    setDrillDown({ open: false, type: "", id: "", name: "" });
+  };
 
   const { data: localData, isLoading: localLoading, error: localError } = useApiFetch(activeIp ? `/api/device/${activeIp}/policy/local` : null);
   const { data: centralData, isLoading: centralLoading, error: centralError } = useApiFetch(activeIp ? `/api/device/${activeIp}/policy/centralized` : null);
@@ -293,9 +302,9 @@ export default function PolicyForensics() {
 
                   {centralData && (
                     <Box>
-                      <CentralSection title="Data Policies" subtitle="Controls data-plane forwarding in VPN segments" icon={<DescIcon fontSize="small" />} policies={centralData.dataPolicies} />
-                      <CentralSection title="Control Policies" subtitle="Affects OMP route advertisements and routing" icon={<HubIcon fontSize="small" />} policies={centralData.controlPolicies} />
-                      <CentralSection title="App-Route Policies" subtitle="Application-aware routing with SLA classes" icon={<RouteIcon fontSize="small" />} policies={centralData.appRoutePolicies} />
+                      <CentralSection title="Data Policies" subtitle="Controls data-plane forwarding in VPN segments" icon={<DescIcon fontSize="small" />} policies={centralData.dataPolicies} onPolicyClick={handlePolicyClick} />
+                      <CentralSection title="Control Policies" subtitle="Affects OMP route advertisements and routing" icon={<HubIcon fontSize="small" />} policies={centralData.controlPolicies} onPolicyClick={handlePolicyClick} />
+                      <CentralSection title="App-Route Policies" subtitle="Application-aware routing with SLA classes" icon={<RouteIcon fontSize="small" />} policies={centralData.appRoutePolicies} onPolicyClick={handlePolicyClick} />
                     </Box>
                   )}
                 </CardContent>
@@ -316,6 +325,15 @@ export default function PolicyForensics() {
               </Typography>
             ))}
           </Paper>
+
+          {/* Policy Drill-Down Modal */}
+          <PolicyDrillDown
+            open={drillDown.open}
+            onClose={handleDrillDownClose}
+            policyType={drillDown.type}
+            policyId={drillDown.id}
+            policyName={drillDown.name}
+          />
         </>
       )}
     </Box>
@@ -363,7 +381,7 @@ function PolicySection({ title, icon, items, renderItem }) {
   );
 }
 
-function CentralSection({ title, subtitle, icon, policies }) {
+function CentralSection({ title, subtitle, icon, policies, onPolicyClick }) {
   const count = policies ? policies.length : 0;
   return (
     <Box sx={{ mb: 2 }}>
@@ -388,7 +406,10 @@ function CentralSection({ title, subtitle, icon, policies }) {
           >
             <AccordionSummary expandIcon={<ExpandMoreIcon />} sx={{ minHeight: 40, "& .MuiAccordionSummary-content": { my: 0.5 } }}>
               <Box sx={{ display: "flex", alignItems: "center", gap: 1, width: "100%" }}>
-                <Typography variant="body2" fontWeight={700} sx={{ flexGrow: 1 }}>{pol.policyName}</Typography>
+                <Typography variant="body2" fontWeight={700} sx={{ flexGrow: 1, cursor: "pointer", "&:hover": { color: "primary.main", textDecoration: "underline" } }}
+                onClick={(e) => { e.stopPropagation(); onPolicyClick && onPolicyClick(pol.policyType, pol.policyId, pol.policyName); }}>
+                {pol.policyName}
+              </Typography>
                 <Chip label={pol.policyType} size="small" variant="outlined" sx={{ fontSize: "0.65rem", height: 18 }} />
               </Box>
             </AccordionSummary>

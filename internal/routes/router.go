@@ -54,6 +54,10 @@ func registerAPIRoutes(r *mux.Router, apiClient *utils.APIClient) {
 	r.HandleFunc("/api/device/{system-ip}/policy/centralized",
 		device.FetchCentralizedPolicy(apiClient)).Methods("GET")
 
+	// ─── Policy Drill-Down (full definition with UUID resolution) ──────
+	r.HandleFunc("/api/policy/definition/{type}/{id}",
+		device.FetchPolicyDefinition(apiClient)).Methods("GET")
+
 	// ─── Traffic Analysis / SLA ────────────────────────────────────────
 	r.HandleFunc("/api/device/{system-ip}/app-route",
 		device.FetchAppRoute(apiClient)).Methods("GET")
