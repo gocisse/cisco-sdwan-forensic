@@ -64,31 +64,33 @@ func registerAPIRoutes(r *mux.Router, apiClient *utils.APIClient) {
 	r.HandleFunc("/api/device/{system-ip}/tunnel-health",
 		device.FetchTunnelHealth(apiClient)).Methods("GET")
 
-	// ─── Real-time (device-scoped, uses {system-ip}) ────────────────────
+	// ─── Real-time (device-scoped, resolves system-ip → UUID) ──────────
+	// vManage statistics/OMP endpoints require the device UUID, not system-ip.
+	// FetchWithUUID resolves system-ip → UUID via /dataservice/device before calling vManage.
 	r.HandleFunc("/api/control-plane/{system-ip}",
-		h(apiClient, "dataservice/device/control/synced/connections?deviceId=", "system-ip")).Methods("GET")
+		device.FetchWithUUID(apiClient, "dataservice/device/control/synced/connections")).Methods("GET")
 	r.HandleFunc("/api/connections/{system-ip}",
-		h(apiClient, "dataservice/device/control/connections?deviceId=", "system-ip")).Methods("GET")
+		device.FetchWithUUID(apiClient, "dataservice/device/control/connections")).Methods("GET")
 	r.HandleFunc("/api/routes/received/{system-ip}",
-		h(apiClient, "dataservice/device/omp/routes/received?deviceId=", "system-ip")).Methods("GET")
+		device.FetchWithUUID(apiClient, "dataservice/device/omp/routes/received")).Methods("GET")
 	r.HandleFunc("/api/routes/advertised/{system-ip}",
-		h(apiClient, "dataservice/device/omp/routes/advertised?deviceId=", "system-ip")).Methods("GET")
+		device.FetchWithUUID(apiClient, "dataservice/device/omp/routes/advertised")).Methods("GET")
 	r.HandleFunc("/api/tlocs/received/{system-ip}",
-		h(apiClient, "dataservice/device/omp/tlocs/received?deviceId=", "system-ip")).Methods("GET")
+		device.FetchWithUUID(apiClient, "dataservice/device/omp/tlocs/received")).Methods("GET")
 	r.HandleFunc("/api/tlocs/advertised/{system-ip}",
-		h(apiClient, "dataservice/device/omp/tlocs/advertised?deviceId=", "system-ip")).Methods("GET")
+		device.FetchWithUUID(apiClient, "dataservice/device/omp/tlocs/advertised")).Methods("GET")
 	r.HandleFunc("/api/app-routes/{system-ip}",
-		h(apiClient, "dataservice/device/app-route/statistics?deviceId=", "system-ip")).Methods("GET")
+		device.FetchWithUUID(apiClient, "dataservice/device/app-route/statistics")).Methods("GET")
 	r.HandleFunc("/api/bfd/{system-ip}",
-		h(apiClient, "dataservice/device/tunnel/bfd_statistics?deviceId=", "system-ip")).Methods("GET")
+		device.FetchWithUUID(apiClient, "dataservice/device/tunnel/bfd_statistics")).Methods("GET")
 	r.HandleFunc("/api/tunnel/{system-ip}",
-		h(apiClient, "dataservice/device/tunnel/statistics?deviceId=", "system-ip")).Methods("GET")
+		device.FetchWithUUID(apiClient, "dataservice/device/tunnel/statistics")).Methods("GET")
 	r.HandleFunc("/api/ipsec/{system-ip}",
-		h(apiClient, "dataservice/device/ipsec/localsa?deviceId=", "system-ip")).Methods("GET")
+		device.FetchWithUUID(apiClient, "dataservice/device/ipsec/localsa")).Methods("GET")
 
 	// ─── Topology ───────────────────────────────────────────────────────
 	r.HandleFunc("/api/topology/{system-ip}",
-		h(apiClient, "dataservice/device/bfd/sessions?deviceId=", "system-ip")).Methods("GET")
+		device.FetchWithUUID(apiClient, "dataservice/device/bfd/sessions")).Methods("GET")
 	// Site topology has custom post-processing (IP stripping), keep dedicated handler
 	r.HandleFunc("/api/topology/site/{system-ip}",
 		topology.FetchSiteTopology(apiClient)).Methods("GET")
@@ -127,25 +129,25 @@ func registerAPIRoutes(r *mux.Router, apiClient *utils.APIClient) {
 	r.HandleFunc("/api/policy/list/tloc",
 		h(apiClient, "dataservice/template/policy/list/tloc", "")).Methods("GET")
 
-	// ─── Edge Policies (device-scoped) ──────────────────────────────────
+	// ─── Edge Policies (device-scoped, resolves system-ip → UUID) ──────
 	r.HandleFunc("/api/edgepolicy/accesslistassociations/{system-ip}",
-		h(apiClient, "dataservice/device/policy/accesslistassociations?deviceId=", "system-ip")).Methods("GET")
+		device.FetchWithUUID(apiClient, "dataservice/device/policy/accesslistassociations")).Methods("GET")
 	r.HandleFunc("/api/edgepolicy/accesslistcounters/{system-ip}",
-		h(apiClient, "dataservice/device/policy/accesslistcounters?deviceId=", "system-ip")).Methods("GET")
+		device.FetchWithUUID(apiClient, "dataservice/device/policy/accesslistcounters")).Methods("GET")
 	r.HandleFunc("/api/edgepolicy/accesslistnames/{system-ip}",
-		h(apiClient, "dataservice/device/policy/accesslistnames?deviceId=", "system-ip")).Methods("GET")
+		device.FetchWithUUID(apiClient, "dataservice/device/policy/accesslistnames")).Methods("GET")
 	r.HandleFunc("/api/edgepolicy/accesslistpolicers/{system-ip}",
-		h(apiClient, "dataservice/device/policy/accesslistpolicers?deviceId=", "system-ip")).Methods("GET")
+		device.FetchWithUUID(apiClient, "dataservice/device/policy/accesslistpolicers")).Methods("GET")
 	r.HandleFunc("/api/edgepolicy/approutepolicyfilter/{system-ip}",
-		h(apiClient, "dataservice/device/policy/approutepolicyfilter?deviceId=", "system-ip")).Methods("GET")
+		device.FetchWithUUID(apiClient, "dataservice/device/policy/approutepolicyfilter")).Methods("GET")
 	r.HandleFunc("/api/edgepolicy/datapolicyfilter/{system-ip}",
-		h(apiClient, "dataservice/device/policy/datapolicyfilter?deviceId=", "system-ip")).Methods("GET")
+		device.FetchWithUUID(apiClient, "dataservice/device/policy/datapolicyfilter")).Methods("GET")
 	r.HandleFunc("/api/edgepolicy/devicepolicer/{system-ip}",
-		h(apiClient, "dataservice/device/policer?deviceId=", "system-ip")).Methods("GET")
+		device.FetchWithUUID(apiClient, "dataservice/device/policer")).Methods("GET")
 	r.HandleFunc("/api/edgepolicy/qosmapinfo/{system-ip}",
-		h(apiClient, "dataservice/device/policy/qosmapinfo?deviceId=", "system-ip")).Methods("GET")
+		device.FetchWithUUID(apiClient, "dataservice/device/policy/qosmapinfo")).Methods("GET")
 	r.HandleFunc("/api/edgepolicy/qosschedulerinfo/{system-ip}",
-		h(apiClient, "dataservice/device/policy/qosschedulerinfo?deviceId=", "system-ip")).Methods("GET")
+		device.FetchWithUUID(apiClient, "dataservice/device/policy/qosschedulerinfo")).Methods("GET")
 	r.HandleFunc("/api/edgepolicy/vsmart",
 		h(apiClient, "dataservice/template/policy/vsmart", "")).Methods("GET")
 }

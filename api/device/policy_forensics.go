@@ -599,6 +599,18 @@ func matchesSiteEntry(entry, siteID string) bool {
 	return false
 }
 
+// vmanageDefType maps assembly type names (as they appear in vSmart policy JSON)
+// to the URL path segment vManage expects in the definition API.
+var vmanageDefType = map[string]string{
+	"appRoute":      "approute",
+	"data":          "data",
+	"control":       "control",
+	"cflowd":        "cflowd",
+	"mesh":          "mesh",
+	"hubAndSpoke":   "hubandspoke",
+	"vpnMemberShip": "vpnmembershipgroup",
+}
+
 // fetchDefinitionSequences fetches a policy definition and extracts sequence names/actions
 // including match conditions and action parameters for the Policy Impact Analysis view.
 func fetchDefinitionSequences(apiClient *utils.APIClient, definitionID, defType string) []PolicySequenceInfo {
@@ -606,10 +618,16 @@ func fetchDefinitionSequences(apiClient *utils.APIClient, definitionID, defType 
 		return nil
 	}
 
-	endpoint := fmt.Sprintf("dataservice/template/policy/definition/%s/%s", defType, definitionID)
+	// Map the assembly type to the vManage URL type; fallback to lowercase.
+	apiType := strings.ToLower(defType)
+	if mapped, ok := vmanageDefType[defType]; ok {
+		apiType = mapped
+	}
+
+	endpoint := fmt.Sprintf("dataservice/template/policy/definition/%s/%s", apiType, definitionID)
 	rawDef, err := apiClient.Get(endpoint)
 	if err != nil {
-		log.Printf("Definition fetch warning for %s/%s: %v", defType, definitionID, err)
+		log.Printf("⚠️ Definition fetch warning for %s/%s (apiType=%s): %v — skipping", defType, definitionID, apiType, err)
 		return nil
 	}
 

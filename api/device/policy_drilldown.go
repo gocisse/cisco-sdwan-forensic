@@ -19,14 +19,14 @@ import (
 
 // DrillDownSequence is a fully resolved, human-readable policy sequence.
 type DrillDownSequence struct {
-	Index        int               `json:"index"`
-	SequenceName string            `json:"sequenceName"`
-	SequenceType string            `json:"sequenceType"`
-	SequenceIP   string            `json:"sequenceIpType,omitempty"`
-	BaseAction   string            `json:"baseAction"`
-	Match        []MatchEntry      `json:"match"`
-	Actions      []ActionEntry     `json:"actions"`
-	Summary      string            `json:"summary"`
+	Index        int           `json:"index"`
+	SequenceName string        `json:"sequenceName"`
+	SequenceType string        `json:"sequenceType"`
+	SequenceIP   string        `json:"sequenceIpType,omitempty"`
+	BaseAction   string        `json:"baseAction"`
+	Match        []MatchEntry  `json:"match"`
+	Actions      []ActionEntry `json:"actions"`
+	Summary      string        `json:"summary"`
 }
 
 // MatchEntry is a single resolved match condition.
@@ -49,13 +49,13 @@ type ActionEntry struct {
 
 // DrillDownResponse is the full policy definition response.
 type DrillDownResponse struct {
-	DefinitionID   string              `json:"definitionId"`
-	Name           string              `json:"name"`
-	Type           string              `json:"type"`
-	Description    string              `json:"description"`
-	DefaultAction  string              `json:"defaultAction"`
-	SequenceCount  int                 `json:"sequenceCount"`
-	Sequences      []DrillDownSequence `json:"sequences"`
+	DefinitionID  string              `json:"definitionId"`
+	Name          string              `json:"name"`
+	Type          string              `json:"type"`
+	Description   string              `json:"description"`
+	DefaultAction string              `json:"defaultAction"`
+	SequenceCount int                 `json:"sequenceCount"`
+	Sequences     []DrillDownSequence `json:"sequences"`
 }
 
 // Friendly labels for match and action fields
@@ -144,10 +144,15 @@ func FetchPolicyDefinition(apiClient *utils.APIClient) http.HandlerFunc {
 			return
 		}
 
-		log.Printf("📖 Policy drill-down: type=%s, id=%s", defType, defID)
+		// Map the type to vManage URL path (e.g. "appRoute" → "approute")
+		apiType := strings.ToLower(defType)
+		if mapped, ok := vmanageDefType[defType]; ok {
+			apiType = mapped
+		}
+		log.Printf("📖 Policy drill-down: type=%s (apiType=%s), id=%s", defType, apiType, defID)
 
 		// Fetch the raw definition from vManage
-		endpoint := fmt.Sprintf("dataservice/template/policy/definition/%s/%s", defType, defID)
+		endpoint := fmt.Sprintf("dataservice/template/policy/definition/%s/%s", apiType, defID)
 		rawDef, err := apiClient.Get(endpoint)
 		if err != nil {
 			log.Printf("Policy definition fetch error for %s/%s: %v", defType, defID, err)
