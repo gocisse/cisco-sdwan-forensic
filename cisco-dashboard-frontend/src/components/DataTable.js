@@ -30,6 +30,7 @@ export default function DataTable({
   stickyHeader = true,
   maxHeight,
   renderCell,
+  onRowClick,
 }) {
   const [search, setSearch] = useState("");
   const [orderBy, setOrderBy] = useState(defaultSort || (columns[0] && columns[0].field));
@@ -122,7 +123,8 @@ export default function DataTable({
           <TableBody>
             {paged.length > 0 ? (
               paged.map((row, i) => (
-                <TableRow key={row._key || i} hover sx={row._rowSx}>
+                <TableRow key={row._key || i} hover sx={{ ...row._rowSx, ...(onRowClick ? { cursor: "pointer" } : {}) }}
+                  onClick={onRowClick ? () => onRowClick(row) : undefined}>
                   {columns.map((col) => (
                     <TableCell key={col.field} sx={{ whiteSpace: "nowrap", fontSize: "0.85rem" }}>
                       {renderCell ? renderCell(col.field, row[col.field], row) : (row[col.field] ?? "—")}

@@ -10,6 +10,7 @@ export default function PolicyListPage({
   columns,
   renderCell,
   dense = true,
+  onRowClick,
 }) {
   const { data, isLoading, error } = useApiFetch(apiPath);
 
@@ -32,6 +33,7 @@ export default function PolicyListPage({
           title={title}
           dense={dense}
           renderCell={renderCell}
+          onRowClick={onRowClick}
         />
       )}
     </Box>
