@@ -72,9 +72,9 @@ func registerAPIRoutes(r *mux.Router, apiClient *utils.APIClient) {
 	r.HandleFunc("/api/connections/{system-ip}",
 		device.FetchWithUUID(apiClient, "dataservice/device/control/connections")).Methods("GET")
 	r.HandleFunc("/api/routes/received/{system-ip}",
-		device.FetchWithUUID(apiClient, "dataservice/device/omp/routes/received")).Methods("GET")
+		device.FetchOmpRoutes(apiClient, "dataservice/device/omp/routes/received")).Methods("GET")
 	r.HandleFunc("/api/routes/advertised/{system-ip}",
-		device.FetchWithUUID(apiClient, "dataservice/device/omp/routes/advertised")).Methods("GET")
+		device.FetchOmpRoutes(apiClient, "dataservice/device/omp/routes/advertised")).Methods("GET")
 	r.HandleFunc("/api/tlocs/received/{system-ip}",
 		device.FetchWithUUID(apiClient, "dataservice/device/omp/tlocs/received")).Methods("GET")
 	r.HandleFunc("/api/tlocs/advertised/{system-ip}",

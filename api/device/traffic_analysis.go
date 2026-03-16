@@ -269,22 +269,41 @@ func FetchTunnelHealth(apiClient *utils.APIClient) http.HandlerFunc {
 		tunnels := make([]TunnelHealthEntry, 0, len(envelope.Data))
 		criticalCnt, warningCnt, okCnt := 0, 0, 0
 
+		if len(envelope.Data) > 0 {
+			log.Printf("🔍 First tunnel stats entry for %s: %s", systemIP, string(envelope.Data[0]))
+		}
+
 		for _, raw := range envelope.Data {
 			var item struct {
-				SrcIP       string      `json:"src-ip"`
-				DstIP       string      `json:"dst-ip"`
-				LocalColor  string      `json:"local-color"`
-				RemoteColor string      `json:"remote-color"`
-				State       string      `json:"state"`
-				TxPkts      json.Number `json:"tx-pkts"`
-				RxPkts      json.Number `json:"rx-pkts"`
-				TxOctets    json.Number `json:"tx-octets"`
-				RxOctets    json.Number `json:"rx-octets"`
-				VdeviceName string      `json:"vdevice-name"`
+				SrcIP        string      `json:"src-ip"`
+				DstIP        string      `json:"dst-ip"`
+				LocalIP      string      `json:"local-ip"`
+				RemoteIP     string      `json:"remote-ip"`
+				SourceIP     string      `json:"source-ip"`
+				DestPublicIP string      `json:"dest-public-ip"`
+				SystemIP     string      `json:"system-ip"`
+				DestSystemIP string      `json:"dest-system-ip"`
+				LocalColor   string      `json:"local-color"`
+				RemoteColor  string      `json:"remote-color"`
+				State        string      `json:"state"`
+				TunnelState  string      `json:"tunnel-state"`
+				OperState    string      `json:"oper-state"`
+				TxPkts       json.Number `json:"tx-pkts"`
+				RxPkts       json.Number `json:"rx-pkts"`
+				TxOctets     json.Number `json:"tx-octets"`
+				RxOctets     json.Number `json:"rx-octets"`
+				VdeviceName  string      `json:"vdevice-name"`
 			}
 			if err := json.Unmarshal(raw, &item); err != nil {
 				continue
 			}
+
+			// Resolve source IP with fallbacks
+			srcIP := firstNonEmpty(item.SrcIP, item.LocalIP, item.SourceIP, item.SystemIP)
+			// Resolve dest IP with fallbacks
+			dstIP := firstNonEmpty(item.DstIP, item.RemoteIP, item.DestPublicIP, item.DestSystemIP)
+			// Resolve state with fallbacks
+			tunnelState := firstNonEmpty(item.State, item.TunnelState, item.OperState)
 
 			txPkts := parseInt64(item.TxPkts)
 			rxPkts := parseInt64(item.RxPkts)
@@ -306,11 +325,11 @@ func FetchTunnelHealth(apiClient *utils.APIClient) http.HandlerFunc {
 			}
 
 			entry := TunnelHealthEntry{
-				SrcIP:          item.SrcIP,
-				DstIP:          item.DstIP,
+				SrcIP:          srcIP,
+				DstIP:          dstIP,
 				LocalColor:     item.LocalColor,
 				RemoteColor:    item.RemoteColor,
-				State:          item.State,
+				State:          tunnelState,
 				TxPackets:      txPkts,
 				RxPackets:      rxPkts,
 				TxOctets:       parseInt64(item.TxOctets),
@@ -381,4 +400,13 @@ func parseInt64(n json.Number) int64 {
 
 func roundTo2(v float64) float64 {
 	return math.Round(v*100) / 100
+}
+
+func firstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }

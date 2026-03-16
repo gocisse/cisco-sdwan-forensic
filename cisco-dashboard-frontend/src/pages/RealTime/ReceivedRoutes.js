@@ -17,6 +17,7 @@ export default function ReceivedRoutes() {
       apiPath="/api/routes/received"
       navigateTo="/realtime/received-routes/"
       columns={columns}
+      prefixSearch
       renderCell={(field, value) => {
         if (field === "lastupdated") return value ? new Date(value).toLocaleString() : "—";
         return value ?? "—";

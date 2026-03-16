@@ -39,7 +39,7 @@ func NewAPIClient(config Config) (*APIClient, error) {
 		Proxy:                 http.ProxyFromEnvironment,
 		DialContext:           (&net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
 		TLSHandshakeTimeout:   15 * time.Second,
-		ResponseHeaderTimeout: 30 * time.Second,
+		ResponseHeaderTimeout: 120 * time.Second,
 	}
 
 	// If user provided a proxy URL, use it explicitly
@@ -79,7 +79,7 @@ func NewAPIClient(config Config) (*APIClient, error) {
 
 	client := &http.Client{
 		Jar:       jar,
-		Timeout:   60 * time.Second,
+		Timeout:   180 * time.Second,
 		Transport: transport,
 	}
 	// Strip trailing slashes from BaseURL to prevent double-slash URLs

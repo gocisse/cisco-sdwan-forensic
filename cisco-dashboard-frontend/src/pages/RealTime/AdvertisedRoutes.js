@@ -17,6 +17,7 @@ export default function AdvertisedRoutes() {
       apiPath="/api/routes/advertised"
       navigateTo="/realtime/advertised-routes/"
       columns={columns}
+      prefixSearch
       renderCell={(field, value) => {
         if (field === "lastupdated") return value ? new Date(value).toLocaleString() : "—";
         return value ?? "—";

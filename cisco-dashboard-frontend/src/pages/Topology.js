@@ -275,6 +275,9 @@ export default function Topology() {
   }, [view, controllers, edgeDevices, controlData]);
 
   // ── Build BFD Star elements ──
+  // BFD records: dst-ip is a tunnel endpoint IP (e.g. 50.148.130.114),
+  // NOT a system-ip. The peer's system-ip is in the "system-ip" or
+  // "dst-public-ip" field. We use system-ip to look up the device record.
   const bfdElements = useMemo(() => {
     if (view !== "bfd" || !bfdData.length || !activeIp) return [];
     const nodesMap = {};
@@ -287,15 +290,17 @@ export default function Topology() {
 
     const seen = new Set();
     bfdData.forEach((bfd, idx) => {
-      const dst = bfd["dst-ip"];
-      if (!dst) return;
+      // The peer's identity: prefer system-ip (the remote device's system-ip),
+      // fall back to dst-public-ip, then dst-ip as last resort
+      const peerSystemIp = bfd["system-ip"] || bfd["dst-public-ip"] || bfd["dst-ip"];
+      if (!peerSystemIp || peerSystemIp === activeIp) return;
 
-      if (!nodesMap[dst]) {
-        nodesMap[dst] = makeNode(deviceMap[dst], dst);
+      if (!nodesMap[peerSystemIp]) {
+        nodesMap[peerSystemIp] = makeNode(deviceMap[peerSystemIp], peerSystemIp);
       }
 
       const color = (bfd["color"] || "").toLowerCase();
-      const pairKey = `${activeIp}-${dst}-${color}`;
+      const pairKey = `${activeIp}-${peerSystemIp}-${color}`;
       if (seen.has(pairKey)) return;
       seen.add(pairKey);
 
@@ -308,7 +313,7 @@ export default function Topology() {
         data: {
           id: `bfd-${idx}`,
           source: activeIp,
-          target: dst,
+          target: peerSystemIp,
           color: edgeColor,
           transport: color || "unknown",
           state: bfd["state"] || "N/A",
@@ -370,7 +375,10 @@ export default function Topology() {
       node.addClass("selected-node");
 
       const sessions = (view === "bfd" ? bfdData : []).filter(
-        (s) => (s["system-ip"] || s["src-ip"]) === nd.id || s["dst-ip"] === nd.id
+        (s) => {
+          const peerSysIp = s["system-ip"] || s["dst-public-ip"] || s["dst-ip"];
+          return peerSysIp === nd.id || (s["vdevice-name"] || s["src-ip"]) === nd.id;
+        }
       );
       setSelectedNodeInfo({ ...nd, sessions });
 
