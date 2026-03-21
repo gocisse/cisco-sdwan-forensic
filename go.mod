@@ -2,6 +2,8 @@ module sdwan-app
 
 go 1.23.1
 
+godebug x509negativeserial=1
+
 require (
 	github.com/gorilla/mux v1.8.1
 

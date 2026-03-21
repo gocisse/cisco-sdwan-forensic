@@ -1,5 +1,7 @@
 // main.go
 
+//go:debug x509negativeserial=1
+
 package main
 
 import (
@@ -7,6 +9,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -50,7 +53,7 @@ func getUserCredentials() (utils.Config, string) {
 	// Always prompt for vManage credentials
 	fmt.Print("Enter vManage URL: ")
 	vManageURL, _ := reader.ReadString('\n')
-	vManageURL = strings.TrimSpace(vManageURL)
+	vManageURL = sanitizeVManageURL(strings.TrimSpace(vManageURL))
 
 	fmt.Print("Enter Username: ")
 	username, _ := reader.ReadString('\n')
@@ -72,6 +75,28 @@ func getUserCredentials() (utils.Config, string) {
 		ProxyUser:  envConfig.ProxyUser,
 		ProxyPass:  envConfig.ProxyPass,
 	}, port
+}
+
+// sanitizeVManageURL strips paths, fragments, and query strings from the
+// user-supplied vManage URL. Users often paste the full browser URL, e.g.
+//
+//	https://tenant.viptela.net/index.html#/app/dashboard
+//
+// We only need the scheme + host (+ port if present).
+func sanitizeVManageURL(raw string) string {
+	// Ensure there's a scheme so url.Parse doesn't misinterpret the host
+	if !strings.Contains(raw, "://") {
+		raw = "https://" + raw
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return raw // return as-is if unparseable
+	}
+	clean := fmt.Sprintf("%s://%s", u.Scheme, u.Host)
+	if clean != raw {
+		log.Printf("📎 Cleaned vManage URL: %s → %s", raw, clean)
+	}
+	return clean
 }
 
 func main() {

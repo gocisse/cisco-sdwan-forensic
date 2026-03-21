@@ -116,8 +116,12 @@ func NewAPIClient(config Config) (*APIClient, error) {
 		}
 		if strings.Contains(errMsg, "certificate") || strings.Contains(errMsg, "x509") {
 			return nil, fmt.Errorf("authentication failed (TLS error): %w\n\n"+
-				"💡 This is usually a certificate issue. The app already skips TLS verification,\n"+
-				"   but a proxy may be intercepting the connection. Try setting the proxy URL.", err)
+				"💡 This is a certificate parsing issue. Common causes:\n"+
+				"   1. The vManage server has a certificate with a negative serial number\n"+
+				"      (common on older Cisco appliances). The app sets GODEBUG=x509negativeserial=1\n"+
+				"      automatically, but if you still see this, try:\n"+
+				"        export GODEBUG=x509negativeserial=1  (then re-run)\n"+
+				"   2. A proxy may be intercepting TLS. Try setting the proxy URL in .env", err)
 		}
 		return nil, fmt.Errorf("authentication failed: %w", err)
 	}
