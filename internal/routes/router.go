@@ -64,6 +64,10 @@ func registerAPIRoutes(r *mux.Router, apiClient *utils.APIClient) {
 	r.HandleFunc("/api/device/{system-ip}/tunnel-health",
 		device.FetchTunnelHealth(apiClient)).Methods("GET")
 
+	// ─── Device Logs (syslog) ──────────────────────────────────────────
+	r.HandleFunc("/api/device/{system-ip}/logs",
+		device.FetchDeviceLogs(apiClient)).Methods("GET")
+
 	// ─── Real-time (device-scoped, resolves system-ip → UUID) ──────────
 	// vManage statistics/OMP endpoints require the device UUID, not system-ip.
 	// FetchWithUUID resolves system-ip → UUID via /dataservice/device before calling vManage.

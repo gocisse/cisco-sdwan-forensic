@@ -38,6 +38,7 @@ import {
   Refresh as RefreshIcon,
   FiberManualRecord as DotIcon,
   Search as SearchIcon,
+  Description as LogsIcon,
 } from "@mui/icons-material";
 import { useDeviceContext } from "../context/DeviceContext";
 import logo from "../assets/logo.png";
@@ -55,6 +56,7 @@ const navSections = [
     icon: <BuildIcon />,
     items: [
       { label: "Alarms", path: "/alarms" },
+      { label: "Device Logs", path: "/device-logs", icon: <LogsIcon fontSize="small" /> },
       { label: "Templates", path: "/templates" },
       { label: "Policy Forensics", path: "/policy-forensics" },
       { label: "SLA Analysis", path: "/sla-dashboard" },
