@@ -12,6 +12,7 @@ import PolicyForensics from "./pages/PolicyForensics";
 import SLADashboard from "./pages/SLADashboard";
 import Alarms from "./pages/Alarms";
 import DeviceLogs from "./pages/DeviceLogs";
+import CrashLogs from "./pages/CrashLogs";
 
 import AdvertisedRoutes from "./pages/RealTime/AdvertisedRoutes";
 import ReceivedRoutes from "./pages/RealTime/ReceivedRoutes";
@@ -74,6 +75,7 @@ export default function App() {
               {/* Troubleshoot */}
               <Route path="/alarms" element={<Alarms />} />
               <Route path="/device-logs/:systemIp?" element={<DeviceLogs />} />
+              <Route path="/crash-logs/:systemIp?" element={<CrashLogs />} />
               <Route path="/templates/:systemIp?" element={<TemplateView />} />
               <Route path="/policy-forensics/:systemIp?" element={<PolicyForensics />} />
               <Route path="/sla-dashboard/:systemIp?" element={<SLADashboard />} />

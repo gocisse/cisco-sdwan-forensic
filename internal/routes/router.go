@@ -68,6 +68,10 @@ func registerAPIRoutes(r *mux.Router, apiClient *utils.APIClient) {
 	r.HandleFunc("/api/device/{system-ip}/logs",
 		device.FetchDeviceLogs(apiClient)).Methods("GET")
 
+	// ─── Crash Logs (core files) ───────────────────────────────────────
+	r.HandleFunc("/api/device/{system-ip}/crashlog",
+		device.FetchCrashLogs(apiClient)).Methods("GET")
+
 	// ─── High Priority: Interfaces / BGP / OSPF ────────────────────────
 	r.HandleFunc("/api/interfaces/{system-ip}",
 		device.FetchWithUUID(apiClient, "dataservice/device/interface")).Methods("GET")
