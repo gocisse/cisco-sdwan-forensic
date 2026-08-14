@@ -26,6 +26,7 @@ const columns = [
   { field: "component", label: "Component", minWidth: 120 },
   { field: "processName", label: "Process", minWidth: 110 },
   { field: "message", label: "Message", minWidth: 400 },
+  { field: "logSource", label: "Source", minWidth: 80 },
 ];
 
 const severityColors = {
@@ -95,7 +96,7 @@ export default function DeviceLogs() {
 
       {!activeIp && (
         <Alert severity="info" sx={{ mb: 2 }}>
-          Select a device to view its syslog entries.
+          Select a device to view its log entries. Supports both vEdge (vsyslog) and IOS-XE (show logging) devices.
         </Alert>
       )}
 
@@ -190,6 +191,23 @@ export default function DeviceLogs() {
                 >
                   {value || "—"}
                 </Box>
+              );
+            }
+            if (field === "logSource") {
+              const sourceLabels = {
+                syslog: { label: "vsyslog", color: "primary" },
+                logging: { label: "logging", color: "secondary" },
+                log: { label: "log", color: "default" },
+              };
+              const src = sourceLabels[(value || "").toLowerCase()] || { label: value || "—", color: "default" };
+              return (
+                <Chip
+                  label={src.label}
+                  size="small"
+                  color={src.color}
+                  variant="outlined"
+                  sx={{ fontSize: "0.65rem" }}
+                />
               );
             }
             return value ?? "—";

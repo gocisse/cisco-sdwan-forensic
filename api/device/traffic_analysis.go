@@ -120,13 +120,16 @@ func FetchAppRoute(apiClient *utils.APIClient) http.HandlerFunc {
 		}
 
 		// vManage requires the device UUID, not the system-ip
-		deviceID := dev.DeviceID
+		deviceID := dev.UUID
 		if deviceID == "" {
 			deviceID = systemIP // fallback for older vManage versions
 		}
 		log.Printf("📡 App-route: system-ip=%s → deviceId=%s", systemIP, deviceID)
 
-		rawData, err := apiClient.Get(fmt.Sprintf("dataservice/device/app-route/statistics?deviceId=%s", deviceID))
+		fullEndpoint := fmt.Sprintf("dataservice/device/app-route/statistics?deviceId=%s", deviceID)
+		log.Printf("📡 Full endpoint: %s", fullEndpoint)
+
+		rawData, err := apiClient.Get(fullEndpoint)
 		if err != nil {
 			log.Printf("App-route fetch error for %s (deviceId=%s): %v", systemIP, deviceID, err)
 			middleware.WriteError(w, http.StatusBadGateway, "VMANAGE_ERROR", "Failed to fetch app-route stats from vManage")
@@ -244,7 +247,7 @@ func FetchTunnelHealth(apiClient *utils.APIClient) http.HandlerFunc {
 		}
 
 		// vManage requires the device UUID, not the system-ip
-		deviceID := dev.DeviceID
+		deviceID := dev.UUID
 		if deviceID == "" {
 			deviceID = systemIP // fallback for older vManage versions
 		}

@@ -232,7 +232,7 @@ func FetchLocalPolicy(apiClient *utils.APIClient) http.HandlerFunc {
 		}
 
 		// Resolve device UUID for vManage API calls
-		deviceID := dev.DeviceID
+		deviceID := dev.UUID
 		if deviceID == "" {
 			deviceID = systemIP
 		}

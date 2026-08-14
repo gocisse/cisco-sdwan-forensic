@@ -62,6 +62,7 @@ type deviceRecord struct {
 	SystemIP   string `json:"system-ip"`
 	HostName   string `json:"host-name"`
 	DeviceID   string `json:"deviceId"`
+	UUID       string `json:"uuid"`
 	Model      string `json:"device-model"`
 	SiteID     string `json:"site-id"`
 	Reach      string `json:"reachability"`

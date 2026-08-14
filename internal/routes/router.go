@@ -68,6 +68,32 @@ func registerAPIRoutes(r *mux.Router, apiClient *utils.APIClient) {
 	r.HandleFunc("/api/device/{system-ip}/logs",
 		device.FetchDeviceLogs(apiClient)).Methods("GET")
 
+	// ─── High Priority: Interfaces / BGP / OSPF ────────────────────────
+	r.HandleFunc("/api/interfaces/{system-ip}",
+		device.FetchWithUUID(apiClient, "dataservice/device/interface")).Methods("GET")
+	r.HandleFunc("/api/bgp/{system-ip}",
+		device.FetchWithUUID(apiClient, "dataservice/device/bgp")).Methods("GET")
+	r.HandleFunc("/api/ospf/{system-ip}",
+		device.FetchWithUUID(apiClient, "dataservice/device/ospf")).Methods("GET")
+
+	// ─── Medium Priority: Environment / Hardware / Certs / Config / Software ─
+	r.HandleFunc("/api/environment/{system-ip}",
+		device.FetchWithUUID(apiClient, "dataservice/device/environment")).Methods("GET")
+	r.HandleFunc("/api/hardware/{system-ip}",
+		device.FetchWithUUID(apiClient, "dataservice/device/hardware")).Methods("GET")
+	r.HandleFunc("/api/certificates",
+		h(apiClient, "dataservice/certificate/managed", "")).Methods("GET")
+	r.HandleFunc("/api/device-config/{system-ip}",
+		device.FetchDeviceConfig(apiClient)).Methods("GET")
+	r.HandleFunc("/api/software/{system-ip}",
+		device.FetchWithUUID(apiClient, "dataservice/device/action/software")).Methods("GET")
+
+	// ─── Low Priority: DHCP / ARP ──────────────────────────────────────
+	r.HandleFunc("/api/dhcp/{system-ip}",
+		device.FetchWithUUID(apiClient, "dataservice/device/dhcp")).Methods("GET")
+	r.HandleFunc("/api/arp/{system-ip}",
+		device.FetchWithUUID(apiClient, "dataservice/device/arp")).Methods("GET")
+
 	// ─── Real-time (device-scoped, resolves system-ip → UUID) ──────────
 	// vManage statistics/OMP endpoints require the device UUID, not system-ip.
 	// FetchWithUUID resolves system-ip → UUID via /dataservice/device before calling vManage.

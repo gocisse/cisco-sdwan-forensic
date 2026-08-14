@@ -46,7 +46,7 @@ func FetchOmpRoutes(apiClient *utils.APIClient, vManageEndpoint string) http.Han
 			return
 		}
 
-		deviceID := dev.DeviceID
+		deviceID := dev.UUID
 		if deviceID == "" {
 			deviceID = systemIP
 		}
@@ -129,7 +129,7 @@ func FetchWithUUID(apiClient *utils.APIClient, vManageEndpoint string) http.Hand
 			return
 		}
 
-		deviceID := dev.DeviceID
+		deviceID := dev.UUID
 		if deviceID == "" {
 			deviceID = systemIP // fallback for older vManage versions
 		}

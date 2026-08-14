@@ -13,7 +13,10 @@ export default function DeviceSelector({ onSelect, navigatePrefix }) {
     if (!ip) return;
     const dev = selectDeviceByIp(ip);
     if (onSelect) onSelect(ip, dev);
-    if (navigatePrefix) navigate(`${navigatePrefix}${ip}`);
+    if (navigatePrefix) {
+      const base = navigatePrefix.endsWith("/") ? navigatePrefix.slice(0, -1) : navigatePrefix;
+      navigate(`${base}/${ip}`);
+    }
   };
 
   return (
