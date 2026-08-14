@@ -317,7 +317,10 @@ export default function Layout() {
                 if (newValue) {
                   const ip = newValue["system-ip"];
                   const path = location.pathname;
-                  if (path.startsWith("/sla-dashboard")) navigate(`/sla-dashboard/${ip}`);
+                  if (path.startsWith("/device-logs")) navigate(`/device-logs/${ip}`);
+                  else if (path.startsWith("/crash-logs")) navigate(`/crash-logs/${ip}`);
+                  else if (path.startsWith("/hardware-inventory")) navigate(`/hardware-inventory/${ip}`);
+                  else if (path.startsWith("/sla-dashboard")) navigate(`/sla-dashboard/${ip}`);
                   else if (path.startsWith("/policy-forensics")) navigate(`/policy-forensics/${ip}`);
                   else if (path.startsWith("/templates")) navigate(`/templates/${ip}`);
                   else if (path.startsWith("/realtime/")) {
