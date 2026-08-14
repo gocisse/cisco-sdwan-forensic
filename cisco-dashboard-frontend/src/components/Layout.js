@@ -40,6 +40,7 @@ import {
   Search as SearchIcon,
   Description as LogsIcon,
   BugReport as BugReportIcon,
+  Memory as MemoryIcon,
 } from "@mui/icons-material";
 import { useDeviceContext } from "../context/DeviceContext";
 import logo from "../assets/logo.png";
@@ -59,6 +60,7 @@ const navSections = [
       { label: "Alarms", path: "/alarms" },
       { label: "Device Logs", path: "/device-logs", icon: <LogsIcon fontSize="small" /> },
       { label: "Crash Logs", path: "/crash-logs", icon: <BugReportIcon fontSize="small" /> },
+      { label: "Hardware Inventory", path: "/hardware-inventory", icon: <MemoryIcon fontSize="small" /> },
       { label: "Templates", path: "/templates" },
       { label: "Policy Forensics", path: "/policy-forensics" },
       { label: "SLA Analysis", path: "/sla-dashboard" },

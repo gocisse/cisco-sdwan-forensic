@@ -72,6 +72,10 @@ func registerAPIRoutes(r *mux.Router, apiClient *utils.APIClient) {
 	r.HandleFunc("/api/device/{system-ip}/crashlog",
 		device.FetchCrashLogs(apiClient)).Methods("GET")
 
+	// ─── Hardware Inventory ────────────────────────────────────────────
+	r.HandleFunc("/api/device/{system-ip}/hardware-inventory",
+		device.FetchHardwareInventory(apiClient)).Methods("GET")
+
 	// ─── High Priority: Interfaces / BGP / OSPF ────────────────────────
 	r.HandleFunc("/api/interfaces/{system-ip}",
 		device.FetchWithUUID(apiClient, "dataservice/device/interface")).Methods("GET")
