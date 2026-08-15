@@ -14,20 +14,21 @@ import (
 
 // CrashLogEntry represents a single crash log (core file) entry from vManage.
 type CrashLogEntry struct {
-	VdeviceName   string `json:"vdeviceName"`
+	VdeviceName     string `json:"vdeviceName"`
 	VdeviceHostName string `json:"vdeviceHostName"`
-	Index         int    `json:"index"`
-	CoreFilename  string `json:"coreFilename"`
-	CoreTime      string `json:"coreTime"`
-	CoreTimeDate  int64  `json:"coreTimeDate"`
-	LastUpdated   int64  `json:"lastUpdated"`
+	Index           int    `json:"index"`
+	CoreFilename    string `json:"coreFilename"`
+	CoreTime        string `json:"coreTime"`
+	CoreTimeDate    int64  `json:"coreTimeDate"`
+	LastUpdated     int64  `json:"lastUpdated"`
 }
 
 // FetchCrashLogs fetches crash log (core file) entries for a specific device from vManage.
 // GET /api/device/{system-ip}/crashlog
 //
 // This calls the vManage real-time monitoring endpoint:
-//   GET /dataservice/device/crashlog?deviceId={deviceId}
+//
+//	GET /dataservice/device/crashlog?deviceId={deviceId}
 //
 // Returns a list of core files on the device, useful for troubleshooting crashes.
 func FetchCrashLogs(apiClient *utils.APIClient) http.HandlerFunc {
@@ -51,7 +52,8 @@ func FetchCrashLogs(apiClient *utils.APIClient) http.HandlerFunc {
 			return
 		}
 
-		deviceID := dev.UUID
+		// Per Cisco documentation, deviceId parameter should be the system-ip
+		deviceID := dev.DeviceID
 		if deviceID == "" {
 			deviceID = systemIP
 		}

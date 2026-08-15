@@ -61,7 +61,8 @@ func FetchHardwareInventory(apiClient *utils.APIClient) http.HandlerFunc {
 			return
 		}
 
-		deviceID := dev.UUID
+		// Per Cisco documentation, deviceId parameter should be the system-ip
+		deviceID := dev.DeviceID
 		if deviceID == "" {
 			deviceID = systemIP
 		}
