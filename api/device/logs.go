@@ -65,15 +65,10 @@ func FetchDeviceLogs(apiClient *utils.APIClient) http.HandlerFunc {
 			return
 		}
 
-		// Per Cisco best practice, use UUID from /dataservice/device for API calls
-		// The uuid field contains the device's unique identifier (e.g., serial number)
-		deviceID := dev.UUID
+		// Per Cisco API docs, deviceId parameter is the device's system-ip
+		deviceID := dev.SystemIP
 		if deviceID == "" {
-			// Fallback to system-ip if UUID is not available
-			deviceID = dev.DeviceID
-			if deviceID == "" {
-				deviceID = systemIP
-			}
+			deviceID = systemIP
 		}
 
 		// Determine device type from model to optimize endpoint order

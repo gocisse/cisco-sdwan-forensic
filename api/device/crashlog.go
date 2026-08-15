@@ -52,23 +52,38 @@ func FetchCrashLogs(apiClient *utils.APIClient) http.HandlerFunc {
 			return
 		}
 
-		// Per Cisco best practice, use UUID from /dataservice/device for API calls
-		// The uuid field contains the device's unique identifier (e.g., serial number)
-		deviceID := dev.UUID
+		// Per Cisco API docs, deviceId parameter is the device's system-ip
+		deviceID := dev.SystemIP
 		if deviceID == "" {
-			// Fallback to system-ip if UUID is not available
-			deviceID = dev.DeviceID
-			if deviceID == "" {
-				deviceID = systemIP
-			}
+			deviceID = systemIP
 		}
 
-		fullEndpoint := fmt.Sprintf("dataservice/device/crashlog?deviceId=%s", deviceID)
 		log.Printf("💥 Crash logs: system-ip=%s → deviceId=%s", systemIP, deviceID)
 
-		rawData, err := apiClient.Get(fullEndpoint)
-		if err != nil {
-			log.Printf("vManage API error: %s — %v", fullEndpoint, err)
+		// Try real-time endpoint first, then synced endpoint
+		// GET /dataservice/device/crashlog?deviceId=deviceId (real-time)
+		// GET /dataservice/device/crashlog/synced?deviceId=deviceId (from NMS)
+		endpoints := []string{
+			fmt.Sprintf("dataservice/device/crashlog?deviceId=%s", deviceID),
+			fmt.Sprintf("dataservice/device/crashlog/synced?deviceId=%s", deviceID),
+		}
+
+		var rawData []byte
+		var lastErr error
+		for _, endpoint := range endpoints {
+			log.Printf("💥 Trying endpoint: %s", endpoint)
+			data, err := apiClient.Get(endpoint)
+			if err != nil {
+				log.Printf("💥 Endpoint %s failed: %v", endpoint, err)
+				lastErr = err
+				continue
+			}
+			rawData = data
+			break
+		}
+
+		if rawData == nil {
+			log.Printf("vManage API error: all crash log endpoints failed, last error: %v", lastErr)
 			middleware.WriteError(w, http.StatusBadGateway, "VMANAGE_ERROR",
 				"Failed to fetch crash logs from vManage")
 			return
@@ -78,7 +93,7 @@ func FetchCrashLogs(apiClient *utils.APIClient) http.HandlerFunc {
 			Data []json.RawMessage `json:"data"`
 		}
 		if err := json.Unmarshal(rawData, &envelope); err != nil {
-			log.Printf("JSON unmarshal error for %s: %v", fullEndpoint, err)
+			log.Printf("JSON unmarshal error: %v", err)
 			middleware.WriteError(w, http.StatusInternalServerError, "PARSE_ERROR", "Failed to parse vManage response")
 			return
 		}
