@@ -333,6 +333,9 @@ export default function Topology() {
           activeCount: rel.activeCount,
           totalCount: rel.totalCount,
           transports: rel.transports,
+          controlConns: rel.controlConns,
+          siteLinks: rel.siteLinks,
+          relationshipTypes: rel.relationshipTypes,
           peerHostname: rel.peerHostname,
           peerType: rel.peerType,
           siteId: rel.siteId,
@@ -508,7 +511,11 @@ export default function Topology() {
         { label: "Degraded", color: "#FFC107", status: true },
         { label: "Down", color: "#FF1744", status: true },
         { type: "divider" },
-        { label: "Click edge for transport details", info: true },
+        { label: "Data Plane", color: "#2196F3", status: true },
+        { label: "Control", color: "#9C27B0", status: true },
+        { label: "Site", color: "#FF9800", status: true },
+        { type: "divider" },
+        { label: "Click edge for details", info: true },
       ];
 
   const viewDescription = view === "control"
@@ -627,61 +634,158 @@ export default function Topology() {
       )}
 
       {/* Relationship Detail Panel (when edge is clicked) */}
-      {view === "dataplane" && selectedEdgeInfo && selectedEdgeInfo.transports && (
+      {view === "dataplane" && selectedEdgeInfo && (
         <Paper variant="outlined" sx={{ p: 2 }}>
           <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 2, flexWrap: "wrap" }}>
             <Typography variant="h6">Connection to {selectedEdgeInfo.peerHostname || selectedEdgeInfo.target}</Typography>
             <Chip label={selectedEdgeInfo.target} size="small" variant="outlined" sx={{ fontFamily: "monospace" }} />
             <Chip 
-              label={selectedEdgeInfo.healthStatus} 
+              label={selectedEdgeInfo.healthStatus || "unknown"} 
               size="small" 
               sx={{ 
                 bgcolor: selectedEdgeInfo.healthStatus === "healthy" ? "#00E676" : 
-                         selectedEdgeInfo.healthStatus === "degraded" ? "#FFC107" : "#FF1744",
+                         selectedEdgeInfo.healthStatus === "degraded" ? "#FFC107" : 
+                         selectedEdgeInfo.healthStatus === "down" ? "#FF1744" : "#78909C",
                 color: selectedEdgeInfo.healthStatus === "degraded" ? "#000" : "#fff",
                 fontWeight: 700 
               }} 
             />
             <Chip label={selectedEdgeInfo.peerType || "edge"} size="small" variant="outlined" />
             <Chip label={`Site ${selectedEdgeInfo.siteId || "N/A"}`} size="small" variant="outlined" />
-            <Chip label={`${selectedEdgeInfo.activeCount}/${selectedEdgeInfo.totalCount} transports up`} size="small" variant="outlined" />
           </Box>
-          <Typography variant="subtitle2" sx={{ mb: 1, color: "text.secondary" }}>Transport Details</Typography>
-          <TableContainer sx={{ maxHeight: 350 }}>
-            <Table size="small" stickyHeader>
-              <TableHead>
-                <TableRow>
-                  <TableCell>Transport</TableCell>
-                  <TableCell>State</TableCell>
-                  <TableCell>Src IP</TableCell>
-                  <TableCell>Dst IP</TableCell>
-                  <TableCell>Protocol</TableCell>
-                  <TableCell>Uptime</TableCell>
-                  <TableCell>Transitions</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {selectedEdgeInfo.transports.map((t, i) => (
-                  <TableRow key={i} hover>
-                    <TableCell>
-                      <Chip label={t.color || "unknown"} size="small"
-                        sx={{ bgcolor: TRANSPORT_COLOR[(t.color || "").toLowerCase()] || "#78909C", color: "#fff", fontSize: "0.7rem", fontWeight: 600 }} />
-                    </TableCell>
-                    <TableCell>
-                      <Chip label={t.state || "\u2014"} size="small"
-                        color={(t.state || "").toLowerCase() === "up" ? "success" : "error"}
-                        variant="outlined" sx={{ fontSize: "0.7rem" }} />
-                    </TableCell>
-                    <TableCell sx={{ fontFamily: "monospace", fontSize: "0.8rem" }}>{t.srcIp || "\u2014"}</TableCell>
-                    <TableCell sx={{ fontFamily: "monospace", fontSize: "0.8rem" }}>{t.dstIp || "\u2014"}</TableCell>
-                    <TableCell>{t.proto || "\u2014"}</TableCell>
-                    <TableCell>{t.uptime || "\u2014"}</TableCell>
-                    <TableCell>{t.transitions ?? "\u2014"}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </TableContainer>
+
+          {/* Relationship Types */}
+          <Box sx={{ display: "flex", gap: 0.5, mb: 2, flexWrap: "wrap", alignItems: "center" }}>
+            <Typography variant="caption" sx={{ color: "text.secondary", mr: 1 }}>Relationship Types:</Typography>
+            {(selectedEdgeInfo.relationshipTypes || []).map((type, i) => (
+              <Chip 
+                key={i}
+                label={type === "data-plane" ? "Data Plane" : type === "control" ? "Control" : "Site"}
+                size="small"
+                sx={{ 
+                  bgcolor: type === "data-plane" ? "#2196F3" : type === "control" ? "#9C27B0" : "#FF9800",
+                  color: "#fff",
+                  fontSize: "0.65rem",
+                  fontWeight: 600
+                }}
+              />
+            ))}
+          </Box>
+
+          {/* Data Plane / Transport Details */}
+          {selectedEdgeInfo.transports && selectedEdgeInfo.transports.length > 0 && (
+            <>
+              <Typography variant="subtitle2" sx={{ mb: 1, color: "text.secondary" }}>
+                Data Plane ({selectedEdgeInfo.activeCount}/{selectedEdgeInfo.totalCount} transports up)
+              </Typography>
+              <TableContainer sx={{ maxHeight: 250, mb: 2 }}>
+                <Table size="small" stickyHeader>
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>Transport</TableCell>
+                      <TableCell>State</TableCell>
+                      <TableCell>Src IP</TableCell>
+                      <TableCell>Dst IP</TableCell>
+                      <TableCell>Protocol</TableCell>
+                      <TableCell>Uptime</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {selectedEdgeInfo.transports.map((t, i) => (
+                      <TableRow key={i} hover>
+                        <TableCell>
+                          <Chip label={t.color || "unknown"} size="small"
+                            sx={{ bgcolor: TRANSPORT_COLOR[(t.color || "").toLowerCase()] || "#78909C", color: "#fff", fontSize: "0.7rem", fontWeight: 600 }} />
+                        </TableCell>
+                        <TableCell>
+                          <Chip label={t.state || "\u2014"} size="small"
+                            color={(t.state || "").toLowerCase() === "up" ? "success" : "error"}
+                            variant="outlined" sx={{ fontSize: "0.7rem" }} />
+                        </TableCell>
+                        <TableCell sx={{ fontFamily: "monospace", fontSize: "0.8rem" }}>{t.srcIp || "\u2014"}</TableCell>
+                        <TableCell sx={{ fontFamily: "monospace", fontSize: "0.8rem" }}>{t.dstIp || "\u2014"}</TableCell>
+                        <TableCell>{t.proto || "\u2014"}</TableCell>
+                        <TableCell>{t.uptime || "\u2014"}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            </>
+          )}
+
+          {/* Control Connections */}
+          {selectedEdgeInfo.controlConns && selectedEdgeInfo.controlConns.length > 0 && (
+            <>
+              <Typography variant="subtitle2" sx={{ mb: 1, color: "text.secondary" }}>
+                Control Connections ({selectedEdgeInfo.controlConns.length})
+              </Typography>
+              <TableContainer sx={{ maxHeight: 200, mb: 2 }}>
+                <Table size="small" stickyHeader>
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>State</TableCell>
+                      <TableCell>Peer Type</TableCell>
+                      <TableCell>Protocol</TableCell>
+                      <TableCell>Local Color</TableCell>
+                      <TableCell>Uptime</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {selectedEdgeInfo.controlConns.map((c, i) => (
+                      <TableRow key={i} hover>
+                        <TableCell>
+                          <Chip label={c.state || "\u2014"} size="small"
+                            color={(c.state || "").toLowerCase() === "up" ? "success" : "error"}
+                            variant="outlined" sx={{ fontSize: "0.7rem" }} />
+                        </TableCell>
+                        <TableCell>{c.peerType || "\u2014"}</TableCell>
+                        <TableCell>{c.protocol || "\u2014"}</TableCell>
+                        <TableCell>
+                          <Chip label={c.localColor || "unknown"} size="small"
+                            sx={{ bgcolor: TRANSPORT_COLOR[(c.localColor || "").toLowerCase()] || "#78909C", color: "#fff", fontSize: "0.7rem", fontWeight: 600 }} />
+                        </TableCell>
+                        <TableCell>{c.uptime || "\u2014"}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            </>
+          )}
+
+          {/* Site Links */}
+          {selectedEdgeInfo.siteLinks && selectedEdgeInfo.siteLinks.length > 0 && (
+            <>
+              <Typography variant="subtitle2" sx={{ mb: 1, color: "text.secondary" }}>
+                Site Links ({selectedEdgeInfo.siteLinks.length})
+              </Typography>
+              <TableContainer sx={{ maxHeight: 200 }}>
+                <Table size="small" stickyHeader>
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>Link Type</TableCell>
+                      <TableCell>Status</TableCell>
+                      <TableCell>Link Key</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {selectedEdgeInfo.siteLinks.map((l, i) => (
+                      <TableRow key={i} hover>
+                        <TableCell>{l.linkType || "\u2014"}</TableCell>
+                        <TableCell>
+                          <Chip label={l.status || "\u2014"} size="small"
+                            color={(l.status || "").toLowerCase() === "up" ? "success" : "error"}
+                            variant="outlined" sx={{ fontSize: "0.7rem" }} />
+                        </TableCell>
+                        <TableCell>{l.linkKey || "\u2014"}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            </>
+          )}
         </Paper>
       )}
 
