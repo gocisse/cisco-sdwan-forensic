@@ -17,16 +17,16 @@ import (
 
 // TransportSession represents a single BFD/IPsec tunnel within a relationship
 type TransportSession struct {
-	Color       string  `json:"color"`
-	State       string  `json:"state"`
-	SrcIP       string  `json:"srcIp"`
-	DstIP       string  `json:"dstIp"`
-	Proto       string  `json:"proto"`
-	Uptime      string  `json:"uptime"`
-	UptimeDate  int64   `json:"uptimeDate,omitempty"`
-	TxInterval  int     `json:"txInterval,omitempty"`
-	Transitions int     `json:"transitions,omitempty"`
-	LastUpdated int64   `json:"lastUpdated,omitempty"`
+	Color       string `json:"color"`
+	State       string `json:"state"`
+	SrcIP       string `json:"srcIp"`
+	DstIP       string `json:"dstIp"`
+	Proto       string `json:"proto"`
+	Uptime      string `json:"uptime"`
+	UptimeDate  int64  `json:"uptimeDate,omitempty"`
+	TxInterval  int    `json:"txInterval,omitempty"`
+	Transitions int    `json:"transitions,omitempty"`
+	LastUpdated int64  `json:"lastUpdated,omitempty"`
 }
 
 // Relationship represents a logical connection between the selected device and a peer
@@ -72,16 +72,18 @@ type rawBFDSession struct {
 
 // deviceRecord for looking up device info
 type deviceRecord struct {
-	SystemIP   string `json:"system-ip"`
-	HostName   string `json:"host-name"`
-	DeviceType string `json:"device-type"`
-	Personality string `json:"personality"`
-	SiteID     interface{} `json:"site-id"`
-	Model      string `json:"device-model"`
+	SystemIP    string      `json:"system-ip"`
+	HostName    string      `json:"host-name"`
+	DeviceType  string      `json:"device-type"`
+	Personality string      `json:"personality"`
+	SiteID      interface{} `json:"site-id"`
+	Model       string      `json:"device-model"`
 }
 
 // FetchLogicalTopology aggregates BFD sessions into logical device relationships
-// GET /api/topology/logical/{system-ip}
+// GET /api/topology/logical/{system-ip}?showAll=true
+// Query params:
+//   - showAll: if "true", returns all peers without limit (default: false, limited to 15)
 func FetchLogicalTopology(apiClient *utils.APIClient) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		systemIP := mux.Vars(r)["system-ip"]
@@ -89,6 +91,9 @@ func FetchLogicalTopology(apiClient *utils.APIClient) http.HandlerFunc {
 			middleware.WriteError(w, http.StatusBadRequest, "MISSING_PARAM", "Missing 'system-ip' path parameter")
 			return
 		}
+
+		// Check if user wants all peers
+		showAll := r.URL.Query().Get("showAll") == "true"
 
 		// Get device list for hostname/type lookups
 		deviceMap := buildDeviceMap(apiClient)
@@ -139,10 +144,10 @@ func FetchLogicalTopology(apiClient *utils.APIClient) http.HandlerFunc {
 			return relationships[i].Importance > relationships[j].Importance
 		})
 
-		// Apply limit (show top 15, hide rest)
+		// Apply limit (show top 15, hide rest) unless showAll is requested
 		const maxVisible = 15
 		hiddenCount := 0
-		if len(relationships) > maxVisible {
+		if !showAll && len(relationships) > maxVisible {
 			hiddenCount = len(relationships) - maxVisible
 			relationships = relationships[:maxVisible]
 		}
@@ -291,8 +296,14 @@ func classifyDeviceType(dev deviceRecord) string {
 }
 
 // calculateImportance assigns a score for ranking relationships
+// Higher scores = more important peers shown first
+// Scoring factors:
+//   - Device type: controllers > hubs/DCs > edges
+//   - Multiple transports: bonus for redundancy
+//   - Health: bonus for active transports, penalty for all-down
+//   - Diversity: bonus for having different transport types
 func calculateImportance(peerType string, activeCount, totalCount int) int {
-	// Base score by device type
+	// Base score by device type (0-100)
 	baseScore := 0
 	switch peerType {
 	case "vmanage":
@@ -305,23 +316,39 @@ func calculateImportance(peerType string, activeCount, totalCount int) int {
 		baseScore = 85
 	case "datacenter":
 		baseScore = 80
-	case "cedge", "vedge", "edge":
+	case "cedge":
+		baseScore = 55 // cEdge slightly higher than vEdge (typically newer/more capable)
+	case "vedge":
 		baseScore = 50
+	case "edge":
+		baseScore = 45
 	default:
 		baseScore = 30
 	}
 
-	// Bonus for multiple transports
-	transportBonus := (totalCount - 1) * 5
-	if transportBonus > 20 {
-		transportBonus = 20
+	// Bonus for multiple transports (redundancy is valuable)
+	// 2 transports: +8, 3 transports: +16, 4+: +20 (capped)
+	transportBonus := 0
+	if totalCount >= 2 {
+		transportBonus = (totalCount - 1) * 8
+		if transportBonus > 20 {
+			transportBonus = 20
+		}
 	}
 
-	// Bonus for active transports
+	// Health bonus/penalty
+	// All up: +15, partial: proportional, all down: -10
 	healthBonus := 0
 	if totalCount > 0 {
-		healthRatio := float64(activeCount) / float64(totalCount)
-		healthBonus = int(healthRatio * 10)
+		if activeCount == totalCount {
+			healthBonus = 15 // All transports healthy
+		} else if activeCount == 0 {
+			healthBonus = -10 // All transports down (deprioritize)
+		} else {
+			// Partial health: proportional bonus (0-10)
+			healthRatio := float64(activeCount) / float64(totalCount)
+			healthBonus = int(healthRatio * 10)
+		}
 	}
 
 	return baseScore + transportBonus + healthBonus

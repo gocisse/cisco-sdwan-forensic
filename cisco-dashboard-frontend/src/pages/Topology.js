@@ -163,6 +163,7 @@ export default function Topology() {
   const [error, setError] = useState("");
   const [controlData, setControlData] = useState({});
   const [logicalData, setLogicalData] = useState(null);
+  const [showAllPeers, setShowAllPeers] = useState(false);
   const [selectedEdgeInfo, setSelectedEdgeInfo] = useState(null);
   const [selectedNodeInfo, setSelectedNodeInfo] = useState(null);
   const [tooltip, setTooltip] = useState(null);
@@ -218,13 +219,14 @@ export default function Topology() {
   }, [view, controllers, fetchControlPlane]);
 
   // ── VIEW B: Fetch logical topology (aggregated relationships) for selected device ──
-  const fetchDataPlane = useCallback(async (ip) => {
+  const fetchDataPlane = useCallback(async (ip, showAll = false) => {
     if (!ip) return;
     setLoading(true);
     setError("");
     setLogicalData(null);
     try {
-      const res = await fetch(`/api/topology/logical/${ip}`);
+      const url = showAll ? `/api/topology/logical/${ip}?showAll=true` : `/api/topology/logical/${ip}`;
+      const res = await fetch(url);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
       setLogicalData(json);
@@ -236,8 +238,15 @@ export default function Topology() {
   }, []);
 
   useEffect(() => {
-    if (view === "dataplane" && activeIp) fetchDataPlane(activeIp);
-  }, [view, activeIp, fetchDataPlane]);
+    if (view === "dataplane" && activeIp) {
+      fetchDataPlane(activeIp, showAllPeers);
+    }
+  }, [view, activeIp, showAllPeers, fetchDataPlane]);
+
+  // Handler for Show All / Show Less button
+  const handleToggleShowAll = () => {
+    setShowAllPeers(!showAllPeers);
+  };
 
   // ── Build Control Plane elements ──
   const controlElements = useMemo(() => {
@@ -474,6 +483,7 @@ export default function Topology() {
     setSelectedEdgeInfo(null);
     setTooltip(null);
     setError("");
+    setShowAllPeers(false); // Reset to limited view when changing views
     setView(newView);
   };
 
@@ -570,13 +580,30 @@ export default function Topology() {
         </Box>
 
         {/* Info badge */}
-        <Box sx={{ position: "absolute", top: 12, left: 12, zIndex: 10 }}>
+        <Box sx={{ position: "absolute", top: 12, left: 12, zIndex: 10, display: "flex", gap: 1, alignItems: "center" }}>
           <Chip
             icon={view === "control" ? <ControlIcon sx={{ fontSize: 14, color: "#8b949e !important" }} /> : <BfdIcon sx={{ fontSize: 14, color: "#8b949e !important" }} />}
-            label={view === "control" ? `${controllers.length} Controllers \u00B7 ${edgeDevices.length} Edges` : `${peerCount} Peers${hiddenCount > 0 ? ` (+${hiddenCount})` : ''}`}
+            label={view === "control" ? `${controllers.length} Controllers \u00B7 ${edgeDevices.length} Edges` : `${peerCount} Peers${hiddenCount > 0 && !showAllPeers ? ` (+${hiddenCount} hidden)` : ''}`}
             size="small"
             sx={{ bgcolor: "rgba(13,17,23,0.85)", color: "#8b949e", fontWeight: 600, fontSize: "0.7rem", border: "1px solid #30363d" }}
           />
+          {/* Show All / Show Less button for data plane view */}
+          {view === "dataplane" && activeIp && (hiddenCount > 0 || showAllPeers) && (
+            <Chip
+              label={showAllPeers ? "Show Less" : `Show All ${peerCount}`}
+              size="small"
+              onClick={handleToggleShowAll}
+              sx={{ 
+                bgcolor: "rgba(88,166,255,0.15)", 
+                color: "#58a6ff", 
+                fontWeight: 600, 
+                fontSize: "0.7rem", 
+                border: "1px solid #58a6ff",
+                cursor: "pointer",
+                "&:hover": { bgcolor: "rgba(88,166,255,0.25)" }
+              }}
+            />
+          )}
         </Box>
 
         <Box ref={containerRef} sx={{ width: "100%", height: "100%" }} />
