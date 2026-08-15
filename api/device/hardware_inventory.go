@@ -61,10 +61,15 @@ func FetchHardwareInventory(apiClient *utils.APIClient) http.HandlerFunc {
 			return
 		}
 
-		// Per Cisco documentation, deviceId parameter should be the system-ip
-		deviceID := dev.DeviceID
+		// Per Cisco best practice, use UUID from /dataservice/device for API calls
+		// The uuid field contains the device's unique identifier (e.g., serial number)
+		deviceID := dev.UUID
 		if deviceID == "" {
-			deviceID = systemIP
+			// Fallback to system-ip if UUID is not available
+			deviceID = dev.DeviceID
+			if deviceID == "" {
+				deviceID = systemIP
+			}
 		}
 
 		// Determine if this is a vEdge device
@@ -87,21 +92,35 @@ func FetchHardwareInventory(apiClient *utils.APIClient) http.HandlerFunc {
 			},
 		}
 
-		// Fetch inventory (synced endpoint works for both device types)
-		response.Inventory = fetchHardwareData(apiClient, "dataservice/hardware/synced/inventory", deviceID, "inventory")
-
-		// Fetch environment
+		// Fetch inventory - try multiple endpoints
+		// For vEdge: try direct endpoint first, then synced
+		// For IOS-XE: try synced endpoint first, then direct
 		if isVEdge {
-			// Try direct endpoint first for vEdge
+			response.Inventory = fetchHardwareData(apiClient, "dataservice/hardware/inventory", deviceID, "inventory")
+			if len(response.Inventory) == 0 {
+				response.Inventory = fetchHardwareData(apiClient, "dataservice/hardware/synced/inventory", deviceID, "inventory")
+			}
+		} else {
+			response.Inventory = fetchHardwareData(apiClient, "dataservice/hardware/synced/inventory", deviceID, "inventory")
+			if len(response.Inventory) == 0 {
+				response.Inventory = fetchHardwareData(apiClient, "dataservice/hardware/inventory", deviceID, "inventory")
+			}
+		}
+
+		// Fetch environment - try multiple endpoints
+		if isVEdge {
 			response.Environment = fetchHardwareData(apiClient, "dataservice/hardware/environment", deviceID, "environment")
 			if len(response.Environment) == 0 {
 				response.Environment = fetchHardwareData(apiClient, "dataservice/hardware/synced/environment", deviceID, "environment")
 			}
 		} else {
 			response.Environment = fetchHardwareData(apiClient, "dataservice/hardware/synced/environment", deviceID, "environment")
+			if len(response.Environment) == 0 {
+				response.Environment = fetchHardwareData(apiClient, "dataservice/hardware/environment", deviceID, "environment")
+			}
 		}
 
-		// Fetch alarms
+		// Fetch alarms - try multiple endpoints
 		if isVEdge {
 			response.Alarms = fetchHardwareData(apiClient, "dataservice/hardware/alarms", deviceID, "alarms")
 			if len(response.Alarms) == 0 {
@@ -109,6 +128,9 @@ func FetchHardwareInventory(apiClient *utils.APIClient) http.HandlerFunc {
 			}
 		} else {
 			response.Alarms = fetchHardwareData(apiClient, "dataservice/hardware/synced/alarms", deviceID, "alarms")
+			if len(response.Alarms) == 0 {
+				response.Alarms = fetchHardwareData(apiClient, "dataservice/hardware/alarms", deviceID, "alarms")
+			}
 		}
 
 		// Fetch thresholds (vEdge only)

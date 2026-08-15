@@ -52,10 +52,15 @@ func FetchCrashLogs(apiClient *utils.APIClient) http.HandlerFunc {
 			return
 		}
 
-		// Per Cisco documentation, deviceId parameter should be the system-ip
-		deviceID := dev.DeviceID
+		// Per Cisco best practice, use UUID from /dataservice/device for API calls
+		// The uuid field contains the device's unique identifier (e.g., serial number)
+		deviceID := dev.UUID
 		if deviceID == "" {
-			deviceID = systemIP
+			// Fallback to system-ip if UUID is not available
+			deviceID = dev.DeviceID
+			if deviceID == "" {
+				deviceID = systemIP
+			}
 		}
 
 		fullEndpoint := fmt.Sprintf("dataservice/device/crashlog?deviceId=%s", deviceID)
