@@ -143,11 +143,14 @@ const CY_STYLE = [
   { selector: "edge.control", style: { "line-style": "dashed", "line-dash-pattern": [6, 4], width: 1.5, opacity: 0.55, "target-arrow-shape": "none" } },
   { selector: "edge.down", style: { "line-color": "#FF1744", "target-arrow-color": "#FF1744", width: 3, opacity: 1 } },
   { selector: "edge.bfd", style: { width: 2.5, opacity: 0.85, "target-arrow-shape": "none" } },
+  { selector: "edge.relationship", style: { width: 3, opacity: 0.9, "target-arrow-shape": "none", "curve-style": "bezier" } },
+  { selector: "edge.relationship.degraded", style: { "line-style": "dashed", "line-dash-pattern": [8, 4] } },
   { selector: "node.dimmed", style: { opacity: 0.12 } },
   { selector: "edge.dimmed", style: { opacity: 0.06 } },
   { selector: "node.highlighted", style: { opacity: 1, "border-width": 5, "z-index": 999 } },
   { selector: "edge.highlighted", style: { opacity: 1, width: 3.5, "z-index": 999 } },
   { selector: "node.selected-node", style: { "border-width": 6, "border-color": "#FFD600", "shadow-blur": 20, "shadow-color": "#FFD600", "shadow-opacity": 0.9, "z-index": 9999 } },
+  { selector: "edge.selected-edge", style: { width: 5, opacity: 1, "z-index": 9999 } },
 ];
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -159,7 +162,8 @@ export default function Topology() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [controlData, setControlData] = useState({});
-  const [bfdData, setBfdData] = useState([]);
+  const [logicalData, setLogicalData] = useState(null);
+  const [selectedEdgeInfo, setSelectedEdgeInfo] = useState(null);
   const [selectedNodeInfo, setSelectedNodeInfo] = useState(null);
   const [tooltip, setTooltip] = useState(null);
 
@@ -213,27 +217,27 @@ export default function Topology() {
     if (view === "control" && controllers.length > 0) fetchControlPlane();
   }, [view, controllers, fetchControlPlane]);
 
-  // ── VIEW B: Fetch BFD sessions for selected device ──
-  const fetchBfd = useCallback(async (ip) => {
+  // ── VIEW B: Fetch logical topology (aggregated relationships) for selected device ──
+  const fetchDataPlane = useCallback(async (ip) => {
     if (!ip) return;
     setLoading(true);
     setError("");
-    setBfdData([]);
+    setLogicalData(null);
     try {
-      const res = await fetch(`/api/topology/${ip}`);
+      const res = await fetch(`/api/topology/logical/${ip}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
-      setBfdData(Array.isArray(json) ? json : json.data || []);
+      setLogicalData(json);
     } catch (e) {
-      console.error("BFD fetch error:", e);
-      setError("Failed to fetch BFD sessions");
+      console.error("Data plane fetch error:", e);
+      setError("Failed to fetch data plane topology");
     }
     setLoading(false);
   }, []);
 
   useEffect(() => {
-    if (view === "bfd" && activeIp) fetchBfd(activeIp);
-  }, [view, activeIp, fetchBfd]);
+    if (view === "dataplane" && activeIp) fetchDataPlane(activeIp);
+  }, [view, activeIp, fetchDataPlane]);
 
   // ── Build Control Plane elements ──
   const controlElements = useMemo(() => {
@@ -274,12 +278,10 @@ export default function Topology() {
     return [...Object.values(nodesMap), ...edgesList];
   }, [view, controllers, edgeDevices, controlData]);
 
-  // ── Build BFD Star elements ──
-  // BFD records: dst-ip is a tunnel endpoint IP (e.g. 50.148.130.114),
-  // NOT a system-ip. The peer's system-ip is in the "system-ip" or
-  // "dst-public-ip" field. We use system-ip to look up the device record.
-  const bfdElements = useMemo(() => {
-    if (view !== "bfd" || !bfdData.length || !activeIp) return [];
+  // ── Build Data Plane elements (aggregated relationships) ──
+  // One edge per peer device, regardless of how many transports exist
+  const dataPlaneElements = useMemo(() => {
+    if (view !== "dataplane" || !logicalData || !activeIp) return [];
     const nodesMap = {};
     const edgesList = [];
 
@@ -288,50 +290,63 @@ export default function Topology() {
     centerNode.classes += " center";
     nodesMap[activeIp] = centerNode;
 
-    const seen = new Set();
-    bfdData.forEach((bfd, idx) => {
-      // The peer's identity: prefer system-ip (the remote device's system-ip),
-      // fall back to dst-public-ip, then dst-ip as last resort
-      const peerSystemIp = bfd["system-ip"] || bfd["dst-public-ip"] || bfd["dst-ip"];
-      if (!peerSystemIp || peerSystemIp === activeIp) return;
+    (logicalData.relationships || []).forEach((rel, idx) => {
+      const peerIP = rel.peerIp;
+      if (!peerIP || peerIP === activeIp) return;
 
-      if (!nodesMap[peerSystemIp]) {
-        nodesMap[peerSystemIp] = makeNode(deviceMap[peerSystemIp], peerSystemIp);
+      // Create peer node
+      if (!nodesMap[peerIP]) {
+        const peerDev = deviceMap[peerIP] || {
+          "host-name": rel.peerHostname,
+          "device-type": rel.peerType,
+          "site-id": rel.siteId,
+        };
+        nodesMap[peerIP] = makeNode(peerDev, peerIP);
       }
 
-      const color = (bfd["color"] || "").toLowerCase();
-      const pairKey = `${activeIp}-${peerSystemIp}-${color}`;
-      if (seen.has(pairKey)) return;
-      seen.add(pairKey);
+      // Determine edge color based on health status
+      let edgeColor = "#78909C"; // default gray
+      if (rel.healthStatus === "healthy") edgeColor = "#00E676";
+      else if (rel.healthStatus === "degraded") edgeColor = "#FFC107";
+      else if (rel.healthStatus === "down") edgeColor = "#FF1744";
 
-      const edgeColor = TRANSPORT_COLOR[color] || TRANSPORT_COLOR.default;
-      const state = (bfd["state"] || "").toLowerCase();
-      const classes = ["bfd"];
-      if (state === "down") classes.push("down");
+      const classes = ["relationship"];
+      if (rel.healthStatus === "down") classes.push("down");
+      if (rel.healthStatus === "degraded") classes.push("degraded");
 
       edgesList.push({
         data: {
-          id: `bfd-${idx}`,
+          id: `rel-${idx}`,
           source: activeIp,
-          target: peerSystemIp,
+          target: peerIP,
           color: edgeColor,
-          transport: color || "unknown",
-          state: bfd["state"] || "N/A",
+          healthStatus: rel.healthStatus,
+          activeCount: rel.activeCount,
+          totalCount: rel.totalCount,
+          transports: rel.transports,
+          peerHostname: rel.peerHostname,
+          peerType: rel.peerType,
+          siteId: rel.siteId,
         },
         classes: classes.join(" "),
       });
     });
 
     return [...Object.values(nodesMap), ...edgesList];
-  }, [view, bfdData, activeIp, deviceMap]);
+  }, [view, logicalData, activeIp, deviceMap]);
 
-  const elements = view === "control" ? controlElements : bfdElements;
+  const elements = view === "control" ? controlElements : dataPlaneElements;
 
   // ── Peer count for badge ──
   const peerCount = useMemo(() => {
-    if (view !== "bfd" || !bfdElements.length) return 0;
-    return bfdElements.filter((el) => el.data && !el.data.source && el.data.id !== activeIp).length;
-  }, [view, bfdElements, activeIp]);
+    if (view !== "dataplane" || !logicalData) return 0;
+    return logicalData.totalPeers || 0;
+  }, [view, logicalData]);
+
+  const hiddenCount = useMemo(() => {
+    if (view !== "dataplane" || !logicalData) return 0;
+    return logicalData.hiddenCount || 0;
+  }, [view, logicalData]);
 
   // ── Initialize Cytoscape ──
   useEffect(() => {
@@ -351,7 +366,7 @@ export default function Topology() {
           name: "concentric",
           concentric: (node) => (node.hasClass("center") ? 10 : 1),
           levelWidth: () => 1,
-          minNodeSpacing: 60, padding: 50, animate: true, animationDuration: 500,
+          minNodeSpacing: 80, padding: 60, animate: true, animationDuration: 500,
         };
 
     const cy = cytoscape({
@@ -368,40 +383,62 @@ export default function Topology() {
     cy.on("tap", "node", (evt) => {
       const node = evt.target;
       const nd = node.data();
-      cy.elements().removeClass("highlighted dimmed selected-node");
+      cy.elements().removeClass("highlighted dimmed selected-node selected-edge");
       const neighborhood = node.neighborhood().add(node);
       cy.elements().not(neighborhood).addClass("dimmed");
       neighborhood.addClass("highlighted");
       node.addClass("selected-node");
 
-      const sessions = (view === "bfd" ? bfdData : []).filter(
-        (s) => {
-          const peerSysIp = s["system-ip"] || s["dst-public-ip"] || s["dst-ip"];
-          return peerSysIp === nd.id || (s["vdevice-name"] || s["src-ip"]) === nd.id;
+      // For data plane view, find the relationship for this peer
+      if (view === "dataplane" && logicalData) {
+        const rel = (logicalData.relationships || []).find(r => r.peerIp === nd.id);
+        if (rel) {
+          setSelectedNodeInfo({ ...nd, relationship: rel });
+        } else {
+          setSelectedNodeInfo({ ...nd });
         }
-      );
-      setSelectedNodeInfo({ ...nd, sessions });
+      } else {
+        setSelectedNodeInfo({ ...nd });
+      }
+      setSelectedEdgeInfo(null);
 
       const rp = node.renderedPosition();
       const rect = containerRef.current.getBoundingClientRect();
       setTooltip({ x: rect.left + rp.x, y: rect.top + rp.y - 60, data: nd });
     });
 
-    // Double-tap in View A → switch to BFD for that device
+    // Tap edge: show relationship details (data plane view)
+    cy.on("tap", "edge", (evt) => {
+      if (view !== "dataplane") return;
+      const edge = evt.target;
+      const ed = edge.data();
+      cy.elements().removeClass("highlighted dimmed selected-node selected-edge");
+      edge.addClass("selected-edge");
+      edge.source().addClass("highlighted");
+      edge.target().addClass("highlighted");
+      cy.elements().not(edge).not(edge.source()).not(edge.target()).addClass("dimmed");
+
+      setSelectedEdgeInfo(ed);
+      setSelectedNodeInfo(null);
+      setTooltip(null);
+    });
+
+    // Double-tap in View A → switch to Data Plane for that device
     cy.on("dbltap", "node", (evt) => {
       if (view !== "control") return;
       const ip = evt.target.data().systemIp;
       if (ip) {
         selectDeviceByIp(ip);
-        setView("bfd");
+        setView("dataplane");
       }
     });
 
     cy.on("tap", (evt) => {
       if (evt.target === cy) {
-        cy.elements().removeClass("highlighted dimmed selected-node");
+        cy.elements().removeClass("highlighted dimmed selected-node selected-edge");
         setTooltip(null);
         setSelectedNodeInfo(null);
+        setSelectedEdgeInfo(null);
       }
     });
 
@@ -434,6 +471,7 @@ export default function Topology() {
   const handleViewChange = (_, newView) => {
     if (!newView) return;
     setSelectedNodeInfo(null);
+    setSelectedEdgeInfo(null);
     setTooltip(null);
     setError("");
     setView(newView);
@@ -450,27 +488,24 @@ export default function Topology() {
         { label: "Reachable", color: "#00E676", status: true },
         { label: "Unreachable", color: "#FF1744", status: true },
         { type: "divider" },
-        { label: "Double-click node \u2192 BFD view", info: true },
+        { label: "Double-click node \u2192 Data Plane view", info: true },
       ]
     : [
         { label: "Selected Device", color: "#FFD600", border: "#FFD600" },
         { label: "Peer", color: ROLE_STYLE.vedge.bg, border: ROLE_STYLE.vedge.border },
         { type: "divider" },
-        { label: "biz-internet", color: TRANSPORT_COLOR["biz-internet"], edge: true },
-        { label: "public-internet", color: TRANSPORT_COLOR["public-internet"], edge: true },
-        { label: "mpls", color: TRANSPORT_COLOR.mpls, edge: true },
-        { label: "gold", color: TRANSPORT_COLOR.gold, edge: true },
-        { label: "silver", color: TRANSPORT_COLOR.silver, edge: true },
-        { type: "divider" },
-        { label: "Up", color: "#00E676", status: true },
+        { label: "Healthy", color: "#00E676", status: true },
+        { label: "Degraded", color: "#FFC107", status: true },
         { label: "Down", color: "#FF1744", status: true },
+        { type: "divider" },
+        { label: "Click edge for transport details", info: true },
       ];
 
   const viewDescription = view === "control"
     ? "Control Plane Hierarchy \u2014 Controllers (top) \u2192 Edge Devices (bottom)"
     : activeIp
-      ? `BFD Star Topology \u2014 ${selectedDevice?.["host-name"] || activeIp} and its direct tunnel peers`
-      : "Select a device to view its BFD tunnels";
+      ? `Data Plane Topology \u2014 ${selectedDevice?.["host-name"] || activeIp} and its ${peerCount} peer${peerCount !== 1 ? 's' : ''}${hiddenCount > 0 ? ` (+${hiddenCount} hidden)` : ''}`
+      : "Select a device to view its data plane connections";
 
   return (
     <Box>
@@ -485,8 +520,8 @@ export default function Topology() {
           <ToggleButton value="control">
             <ControlIcon sx={{ mr: 0.5, fontSize: 18 }} /> Control Plane
           </ToggleButton>
-          <ToggleButton value="bfd">
-            <BfdIcon sx={{ mr: 0.5, fontSize: 18 }} /> BFD Tunnels
+          <ToggleButton value="dataplane">
+            <BfdIcon sx={{ mr: 0.5, fontSize: 18 }} /> Data Plane
           </ToggleButton>
         </ToggleButtonGroup>
       </Box>
@@ -509,9 +544,9 @@ export default function Topology() {
       </Box>
 
       {/* Alerts */}
-      {view === "bfd" && !activeIp && (
+      {view === "dataplane" && !activeIp && (
         <Alert severity="info" sx={{ mb: 2 }}>
-          Select a device from the global search bar &mdash; or double-click a node in the Control Plane view &mdash; to see its BFD tunnel topology.
+          Select a device from the global search bar &mdash; or double-click a node in the Control Plane view &mdash; to see its data plane connections.
         </Alert>
       )}
       {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
@@ -521,7 +556,7 @@ export default function Topology() {
         {loading && (
           <Box sx={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, display: "flex", justifyContent: "center", alignItems: "center", bgcolor: "rgba(13,17,23,0.8)", zIndex: 20 }}>
             <CircularProgress size={40} sx={{ color: "#58a6ff" }} />
-            <Typography sx={{ ml: 2, color: "#8b949e" }}>Loading {view === "control" ? "control connections" : "BFD sessions"}...</Typography>
+            <Typography sx={{ ml: 2, color: "#8b949e" }}>Loading {view === "control" ? "control connections" : "data plane topology"}...</Typography>
           </Box>
         )}
 
@@ -538,7 +573,7 @@ export default function Topology() {
         <Box sx={{ position: "absolute", top: 12, left: 12, zIndex: 10 }}>
           <Chip
             icon={view === "control" ? <ControlIcon sx={{ fontSize: 14, color: "#8b949e !important" }} /> : <BfdIcon sx={{ fontSize: 14, color: "#8b949e !important" }} />}
-            label={view === "control" ? `${controllers.length} Controllers \u00B7 ${edgeDevices.length} Edges` : `${peerCount} Peers`}
+            label={view === "control" ? `${controllers.length} Controllers \u00B7 ${edgeDevices.length} Edges` : `${peerCount} Peers${hiddenCount > 0 ? ` (+${hiddenCount})` : ''}`}
             size="small"
             sx={{ bgcolor: "rgba(13,17,23,0.85)", color: "#8b949e", fontWeight: 600, fontSize: "0.7rem", border: "1px solid #30363d" }}
           />
@@ -560,55 +595,99 @@ export default function Topology() {
       </Paper>
 
       {/* Empty state */}
-      {view === "bfd" && activeIp && bfdData.length === 0 && !loading && !error && (
-        <Alert severity="info">No BFD sessions found for {selectedDevice?.["host-name"] || activeIp}.</Alert>
+      {view === "dataplane" && activeIp && (!logicalData || logicalData.relationships?.length === 0) && !loading && !error && (
+        <Alert severity="info">No data plane connections found for {selectedDevice?.["host-name"] || activeIp}.</Alert>
       )}
 
-      {/* Session Detail Panel (BFD) */}
-      {view === "bfd" && selectedNodeInfo && selectedNodeInfo.sessions && selectedNodeInfo.sessions.length > 0 && (
+      {/* Relationship Detail Panel (when edge is clicked) */}
+      {view === "dataplane" && selectedEdgeInfo && selectedEdgeInfo.transports && (
         <Paper variant="outlined" sx={{ p: 2 }}>
-          <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 1, flexWrap: "wrap" }}>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 2, flexWrap: "wrap" }}>
+            <Typography variant="h6">Connection to {selectedEdgeInfo.peerHostname || selectedEdgeInfo.target}</Typography>
+            <Chip label={selectedEdgeInfo.target} size="small" variant="outlined" sx={{ fontFamily: "monospace" }} />
+            <Chip 
+              label={selectedEdgeInfo.healthStatus} 
+              size="small" 
+              sx={{ 
+                bgcolor: selectedEdgeInfo.healthStatus === "healthy" ? "#00E676" : 
+                         selectedEdgeInfo.healthStatus === "degraded" ? "#FFC107" : "#FF1744",
+                color: selectedEdgeInfo.healthStatus === "degraded" ? "#000" : "#fff",
+                fontWeight: 700 
+              }} 
+            />
+            <Chip label={selectedEdgeInfo.peerType || "edge"} size="small" variant="outlined" />
+            <Chip label={`Site ${selectedEdgeInfo.siteId || "N/A"}`} size="small" variant="outlined" />
+            <Chip label={`${selectedEdgeInfo.activeCount}/${selectedEdgeInfo.totalCount} transports up`} size="small" variant="outlined" />
+          </Box>
+          <Typography variant="subtitle2" sx={{ mb: 1, color: "text.secondary" }}>Transport Details</Typography>
+          <TableContainer sx={{ maxHeight: 350 }}>
+            <Table size="small" stickyHeader>
+              <TableHead>
+                <TableRow>
+                  <TableCell>Transport</TableCell>
+                  <TableCell>State</TableCell>
+                  <TableCell>Src IP</TableCell>
+                  <TableCell>Dst IP</TableCell>
+                  <TableCell>Protocol</TableCell>
+                  <TableCell>Uptime</TableCell>
+                  <TableCell>Transitions</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {selectedEdgeInfo.transports.map((t, i) => (
+                  <TableRow key={i} hover>
+                    <TableCell>
+                      <Chip label={t.color || "unknown"} size="small"
+                        sx={{ bgcolor: TRANSPORT_COLOR[(t.color || "").toLowerCase()] || "#78909C", color: "#fff", fontSize: "0.7rem", fontWeight: 600 }} />
+                    </TableCell>
+                    <TableCell>
+                      <Chip label={t.state || "\u2014"} size="small"
+                        color={(t.state || "").toLowerCase() === "up" ? "success" : "error"}
+                        variant="outlined" sx={{ fontSize: "0.7rem" }} />
+                    </TableCell>
+                    <TableCell sx={{ fontFamily: "monospace", fontSize: "0.8rem" }}>{t.srcIp || "\u2014"}</TableCell>
+                    <TableCell sx={{ fontFamily: "monospace", fontSize: "0.8rem" }}>{t.dstIp || "\u2014"}</TableCell>
+                    <TableCell>{t.proto || "\u2014"}</TableCell>
+                    <TableCell>{t.uptime || "\u2014"}</TableCell>
+                    <TableCell>{t.transitions ?? "\u2014"}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </Paper>
+      )}
+
+      {/* Node Detail Panel (when node is clicked in data plane view) */}
+      {view === "dataplane" && selectedNodeInfo && selectedNodeInfo.relationship && (
+        <Paper variant="outlined" sx={{ p: 2 }}>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 2, flexWrap: "wrap" }}>
             <Typography variant="h6">{selectedNodeInfo.hostname || selectedNodeInfo.id}</Typography>
             <Chip label={selectedNodeInfo.systemIp || selectedNodeInfo.id} size="small" variant="outlined" sx={{ fontFamily: "monospace" }} />
             <Chip label={selectedNodeInfo.status || "unknown"} size="small" color={selectedNodeInfo.status === "reachable" ? "success" : "error"} />
             <Chip label={selectedNodeInfo.deviceType || "N/A"} size="small" variant="outlined" />
             <Chip label={`Site ${selectedNodeInfo.siteId || "N/A"}`} size="small" variant="outlined" />
           </Box>
-          <TableContainer sx={{ maxHeight: 350 }}>
-            <Table size="small" stickyHeader>
-              <TableHead>
-                <TableRow>
-                  <TableCell>Peer</TableCell>
-                  <TableCell>State</TableCell>
-                  <TableCell>Transport</TableCell>
-                  <TableCell>Src IP</TableCell>
-                  <TableCell>Dst IP</TableCell>
-                  <TableCell>Proto</TableCell>
-                  <TableCell>Last Updated</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {selectedNodeInfo.sessions.map((s, i) => (
-                  <TableRow key={i} hover>
-                    <TableCell>{s["vdevice-host-name"] || s["dst-ip"] || "\u2014"}</TableCell>
-                    <TableCell>
-                      <Chip label={s["state"] || "\u2014"} size="small"
-                        color={(s["state"] || "").toLowerCase() === "up" ? "success" : "error"}
-                        variant="outlined" sx={{ fontSize: "0.7rem" }} />
-                    </TableCell>
-                    <TableCell>
-                      <Chip label={s["color"] || "\u2014"} size="small"
-                        sx={{ bgcolor: TRANSPORT_COLOR[(s["color"] || "").toLowerCase()] || "#78909C", color: "#fff", fontSize: "0.7rem", fontWeight: 600 }} />
-                    </TableCell>
-                    <TableCell sx={{ fontFamily: "monospace", fontSize: "0.8rem" }}>{s["src-ip"] || "\u2014"}</TableCell>
-                    <TableCell sx={{ fontFamily: "monospace", fontSize: "0.8rem" }}>{s["dst-ip"] || "\u2014"}</TableCell>
-                    <TableCell>{s["proto"] || "\u2014"}</TableCell>
-                    <TableCell>{s["lastupdated"] ? new Date(s["lastupdated"]).toLocaleString() : "\u2014"}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </TableContainer>
+          <Typography variant="subtitle2" sx={{ mb: 1, color: "text.secondary" }}>
+            {selectedNodeInfo.relationship.totalCount} Transport{selectedNodeInfo.relationship.totalCount !== 1 ? 's' : ''} 
+            ({selectedNodeInfo.relationship.activeCount} active)
+          </Typography>
+          <Box sx={{ display: "flex", gap: 0.5, flexWrap: "wrap" }}>
+            {selectedNodeInfo.relationship.transports.map((t, i) => (
+              <Chip 
+                key={i}
+                label={`${t.color}: ${t.state}`} 
+                size="small"
+                sx={{ 
+                  bgcolor: TRANSPORT_COLOR[(t.color || "").toLowerCase()] || "#78909C", 
+                  color: "#fff", 
+                  fontSize: "0.7rem", 
+                  fontWeight: 600,
+                  opacity: (t.state || "").toLowerCase() === "up" ? 1 : 0.5
+                }} 
+              />
+            ))}
+          </Box>
         </Paper>
       )}
     </Box>

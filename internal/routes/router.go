@@ -129,6 +129,10 @@ func registerAPIRoutes(r *mux.Router, apiClient *utils.APIClient) {
 		device.FetchWithUUID(apiClient, "dataservice/device/ipsec/localsa")).Methods("GET")
 
 	// ─── Topology ───────────────────────────────────────────────────────
+	// Logical topology: aggregates BFD sessions into device-to-device relationships
+	r.HandleFunc("/api/topology/logical/{system-ip}",
+		topology.FetchLogicalTopology(apiClient)).Methods("GET")
+	// Raw BFD sessions (kept for backward compatibility)
 	r.HandleFunc("/api/topology/{system-ip}",
 		device.FetchWithUUID(apiClient, "dataservice/device/bfd/sessions")).Methods("GET")
 	// Site topology has custom post-processing (IP stripping), keep dedicated handler
