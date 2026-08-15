@@ -35,12 +35,10 @@ type HardwareDeviceInfo struct {
 //
 // Per Cisco API docs, deviceId = system-ip (DeviceIP)
 //
-// Endpoints used (per Cisco documentation):
-//   - /dataservice/hardware/synced/inventory?deviceId=x.x.x.x (inventory with serial numbers - NMS)
-//   - /dataservice/device/hardware/environment?deviceId=x.x.x.x (real-time environment)
-//   - /dataservice/hardware/synced/environment?deviceId=x.x.x.x (environment - NMS)
-//   - /dataservice/hardware/alarms?deviceId=x.x.x.x (alarms - vEdge only)
-//   - /dataservice/hardware/synced/alarms?deviceId=x.x.x.x (alarms - NMS)
+// Endpoints used (verified against vManage API):
+//   - /dataservice/device/hardware/inventory?deviceId=x.x.x.x (inventory with serial numbers)
+//   - /dataservice/device/hardware/environment?deviceId=x.x.x.x (environment/temperature)
+//   - /dataservice/device/hardware/alarms?deviceId=x.x.x.x (hardware alarms)
 //   - /dataservice/hardware/threshold?deviceId=x.x.x.x (thresholds - vEdge only)
 //
 // Returns a combined response with all hardware data.
@@ -91,43 +89,20 @@ func FetchHardwareInventory(apiClient *utils.APIClient) http.HandlerFunc {
 			},
 		}
 
-		// Fetch inventory (from NMS only per Cisco docs)
-		// GET /dataservice/hardware/synced/inventory?deviceId=deviceId
-		response.Inventory = fetchHardwareData(apiClient, "dataservice/hardware/synced/inventory", deviceID, "inventory")
+		// Fetch inventory
+		// GET /dataservice/device/hardware/inventory?deviceId=x.x.x.x
+		response.Inventory = fetchHardwareData(apiClient, "dataservice/device/hardware/inventory", deviceID, "inventory")
 
-		// Fetch environment - try real-time first, then NMS synced
-		// GET /dataservice/device/hardware/environment?deviceId=deviceId (real-time)
-		// GET /dataservice/hardware/synced/environment?deviceId=deviceId (NMS)
-		if isVEdge {
-			response.Environment = fetchHardwareData(apiClient, "dataservice/device/hardware/environment", deviceID, "environment")
-			if len(response.Environment) == 0 {
-				response.Environment = fetchHardwareData(apiClient, "dataservice/hardware/environment", deviceID, "environment")
-			}
-			if len(response.Environment) == 0 {
-				response.Environment = fetchHardwareData(apiClient, "dataservice/hardware/synced/environment", deviceID, "environment")
-			}
-		} else {
-			// IOS-XE: try real-time device endpoint first
-			response.Environment = fetchHardwareData(apiClient, "dataservice/device/hardware/environment", deviceID, "environment")
-			if len(response.Environment) == 0 {
-				response.Environment = fetchHardwareData(apiClient, "dataservice/hardware/synced/environment", deviceID, "environment")
-			}
-		}
+		// Fetch environment
+		// GET /dataservice/device/hardware/environment?deviceId=x.x.x.x
+		response.Environment = fetchHardwareData(apiClient, "dataservice/device/hardware/environment", deviceID, "environment")
 
 		// Fetch alarms
-		// GET /dataservice/hardware/alarms?deviceId=deviceId (vEdge only)
-		// GET /dataservice/hardware/synced/alarms?deviceId=deviceId (NMS)
-		if isVEdge {
-			response.Alarms = fetchHardwareData(apiClient, "dataservice/hardware/alarms", deviceID, "alarms")
-			if len(response.Alarms) == 0 {
-				response.Alarms = fetchHardwareData(apiClient, "dataservice/hardware/synced/alarms", deviceID, "alarms")
-			}
-		} else {
-			response.Alarms = fetchHardwareData(apiClient, "dataservice/hardware/synced/alarms", deviceID, "alarms")
-		}
+		// GET /dataservice/device/hardware/alarms?deviceId=x.x.x.x
+		response.Alarms = fetchHardwareData(apiClient, "dataservice/device/hardware/alarms", deviceID, "alarms")
 
 		// Fetch thresholds (vEdge only)
-		// GET /dataservice/hardware/threshold?deviceId=deviceId
+		// GET /dataservice/hardware/threshold?deviceId=x.x.x.x
 		if isVEdge {
 			response.Thresholds = fetchHardwareData(apiClient, "dataservice/hardware/threshold", deviceID, "thresholds")
 		}
