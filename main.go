@@ -19,21 +19,6 @@ import (
 	"sdwan-app/utils"
 )
 
-// resolveStaticDir finds the frontend build directory.
-// Production (zip): frontend/
-// Development:      cisco-dashboard-frontend/build/
-func resolveStaticDir() string {
-	candidates := []string{"frontend", "cisco-dashboard-frontend/build"}
-	for _, dir := range candidates {
-		if info, err := os.Stat(dir + "/index.html"); err == nil && !info.IsDir() {
-			log.Printf("📁 Serving frontend from: %s", dir)
-			return dir
-		}
-	}
-	log.Println("⚠️ No frontend build found. Checked: frontend/, cisco-dashboard-frontend/build/")
-	return "frontend"
-}
-
 func getUserCredentials() (utils.Config, string) {
 	// Load proxy settings from .env file
 	envConfig := utils.LoadConfig()
@@ -109,8 +94,8 @@ func main() {
 		log.Fatalf("Failed to initialize API client: %v", err)
 	}
 
-	// ─── Build Router (API + SSE + Static) ─────────────────────────────
-	r := routes.New(apiClient, resolveStaticDir())
+	// ─── Build Router (API + SSE + Embedded Static) ─────────────────────
+	r := routes.New(apiClient)
 
 	// ─── Apply Middleware Chain ─────────────────────────────────────────
 	app := middleware.Chain(r,

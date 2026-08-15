@@ -1,10 +1,13 @@
 package routes
 
 import (
+	"io/fs"
+	"log"
 	"net/http"
 
 	"sdwan-app/api/device"
 	"sdwan-app/api/topology"
+	"sdwan-app/frontend"
 	"sdwan-app/handler"
 	"sdwan-app/sse"
 	"sdwan-app/utils"
@@ -20,14 +23,13 @@ func h(apiClient *utils.APIClient, endpoint, pathParam string) http.HandlerFunc 
 // New creates and returns a fully configured mux.Router with all API routes,
 // SSE endpoints, and static file serving for the React SPA.
 //
-// The staticDir parameter is the path to the React build output directory
-// (e.g., "cisco-dashboard-frontend/build").
-func New(apiClient *utils.APIClient, staticDir string) *mux.Router {
+// The frontend is embedded in the binary at compile time.
+func New(apiClient *utils.APIClient) *mux.Router {
 	r := mux.NewRouter()
 
 	registerAPIRoutes(r, apiClient)
 	registerSSERoutes(r, apiClient)
-	registerStaticRoutes(r, staticDir)
+	registerStaticRoutes(r)
 
 	return r
 }
@@ -205,15 +207,33 @@ func registerSSERoutes(r *mux.Router, apiClient *utils.APIClient) {
 	go sse.BroadcastAppRoute(apiClient)
 }
 
-// registerStaticRoutes serves the React SPA build from the given directory.
+// registerStaticRoutes serves the React SPA from the embedded filesystem.
 // The catch-all fallback serves index.html for client-side routing.
-func registerStaticRoutes(r *mux.Router, staticDir string) {
+func registerStaticRoutes(r *mux.Router) {
+	// Get embedded frontend build
+	buildFS, err := frontend.GetBuildFS()
+	if err != nil {
+		log.Fatalf("Failed to load embedded frontend: %v", err)
+	}
+
+	// Get the static subdirectory
+	staticFS, err := fs.Sub(buildFS, "static")
+	if err != nil {
+		log.Fatalf("Failed to load static assets: %v", err)
+	}
+
 	// Serve /static/* assets (JS, CSS, media)
 	r.PathPrefix("/static/").Handler(
-		http.StripPrefix("/static/", http.FileServer(http.Dir(staticDir+"/static"))))
+		http.StripPrefix("/static/", http.FileServer(http.FS(staticFS))))
 
 	// SPA catch-all: serve index.html for any unmatched route
-	r.PathPrefix("/").HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.ServeFile(w, r, staticDir+"/index.html")
+	r.PathPrefix("/").HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		indexHTML, err := fs.ReadFile(buildFS, "index.html")
+		if err != nil {
+			http.Error(w, "Frontend not found", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Write(indexHTML)
 	})
 }
