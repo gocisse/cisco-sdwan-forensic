@@ -25,6 +25,7 @@ import {
   Fullscreen as FullscreenIcon,
   AccountTree as ControlIcon,
   Hub as BfdIcon,
+  Route as RouteIcon,
 } from "@mui/icons-material";
 import cytoscape from "cytoscape";
 import dagre from "cytoscape-dagre";
@@ -148,6 +149,8 @@ const CY_STYLE = [
   { selector: "edge.relationship.degraded", style: { "line-style": "dashed", "line-dash-pattern": [8, 4] } },
   { selector: "edge.relationship.down", style: { "line-style": "dotted", "line-dash-pattern": [2, 4] } },
   { selector: "edge.relationship.multi-type", style: { "line-style": "solid", "border-width": 1 } },
+  // OMP route edges
+  { selector: "edge.omp-route", style: { width: "data(width)", opacity: 0.85, "target-arrow-shape": "triangle", "arrow-scale": 0.6, "curve-style": "bezier" } },
   { selector: "node.dimmed", style: { opacity: 0.12 } },
   { selector: "edge.dimmed", style: { opacity: 0.06 } },
   { selector: "node.highlighted", style: { opacity: 1, "border-width": 5, "z-index": 999 } },
@@ -166,6 +169,7 @@ export default function Topology() {
   const [error, setError] = useState("");
   const [controlData, setControlData] = useState({});
   const [logicalData, setLogicalData] = useState(null);
+  const [ompData, setOmpData] = useState(null);
   const [showAllPeers, setShowAllPeers] = useState(false);
   const [selectedEdgeInfo, setSelectedEdgeInfo] = useState(null);
   const [selectedNodeInfo, setSelectedNodeInfo] = useState(null);
@@ -250,6 +254,30 @@ export default function Topology() {
   const handleToggleShowAll = () => {
     setShowAllPeers(!showAllPeers);
   };
+
+  // ── VIEW C: Fetch OMP routing topology for selected device ──
+  const fetchOmpTopology = useCallback(async (ip) => {
+    if (!ip) return;
+    setLoading(true);
+    setError("");
+    setOmpData(null);
+    try {
+      const res = await fetch(`/api/topology/omp/${ip}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = await res.json();
+      setOmpData(json);
+    } catch (e) {
+      console.error("OMP topology fetch error:", e);
+      setError("Failed to fetch OMP routing topology");
+    }
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    if (view === "omp" && activeIp) {
+      fetchOmpTopology(activeIp);
+    }
+  }, [view, activeIp, fetchOmpTopology]);
 
   // ── Build Control Plane elements ──
   const controlElements = useMemo(() => {
@@ -358,13 +386,72 @@ export default function Topology() {
     return [...Object.values(nodesMap), ...edgesList];
   }, [view, logicalData, activeIp, deviceMap]);
 
-  const elements = view === "control" ? controlElements : dataPlaneElements;
+  // ── Build OMP Routing elements ──
+  const ompElements = useMemo(() => {
+    if (view !== "omp" || !ompData || !activeIp) return [];
+    const nodesMap = {};
+    const edgesList = [];
+
+    // Center node (selected device)
+    const centerDev = deviceMap[activeIp] || { "host-name": activeIp, "device-type": "edge", "site-id": "N/A" };
+    const centerNode = makeNode(centerDev, activeIp);
+    centerNode.classes = "center";
+    nodesMap[activeIp] = centerNode;
+
+    (ompData.peers || []).forEach((peer, idx) => {
+      const peerIP = peer.peerIp;
+      if (!peerIP || peerIP === activeIp) return;
+
+      // Create peer node
+      if (!nodesMap[peerIP]) {
+        const peerDev = deviceMap[peerIP] || {
+          "host-name": peer.peerHostname,
+          "device-type": peer.peerType,
+          "site-id": peer.siteId,
+        };
+        nodesMap[peerIP] = makeNode(peerDev, peerIP);
+      }
+
+      // Edge color based on route count (more routes = more important)
+      const routeCount = peer.routeCount || 0;
+      let edgeColor = "#78909C"; // gray
+      if (routeCount >= 50) edgeColor = "#00E676"; // green - many routes
+      else if (routeCount >= 10) edgeColor = "#FFC107"; // yellow - moderate
+      else if (routeCount >= 1) edgeColor = "#2196F3"; // blue - few routes
+
+      // Edge width based on route count
+      const edgeWidth = Math.min(2 + Math.floor(routeCount / 10), 8);
+
+      edgesList.push({
+        data: {
+          id: `omp-${idx}`,
+          source: activeIp,
+          target: peerIP,
+          color: edgeColor,
+          width: edgeWidth,
+          routeCount: routeCount,
+          vpnIds: peer.vpnIds,
+          prefixes: peer.prefixes,
+          routes: peer.routes,
+          peerHostname: peer.peerHostname,
+          peerType: peer.peerType,
+          siteId: peer.siteId,
+        },
+        classes: "omp-route",
+      });
+    });
+
+    return [...Object.values(nodesMap), ...edgesList];
+  }, [view, ompData, activeIp, deviceMap]);
+
+  const elements = view === "control" ? controlElements : view === "omp" ? ompElements : dataPlaneElements;
 
   // ── Peer count for badge ──
   const peerCount = useMemo(() => {
+    if (view === "omp" && ompData) return ompData.totalPeers || 0;
     if (view !== "dataplane" || !logicalData) return 0;
     return logicalData.totalPeers || 0;
-  }, [view, logicalData]);
+  }, [view, logicalData, ompData]);
 
   const hiddenCount = useMemo(() => {
     if (view !== "dataplane" || !logicalData) return 0;
@@ -430,9 +517,9 @@ export default function Topology() {
       setTooltip({ x: rect.left + rp.x, y: rect.top + rp.y - 60, data: nd });
     });
 
-    // Tap edge: show relationship details (data plane view)
+    // Tap edge: show relationship details (data plane or OMP view)
     cy.on("tap", "edge", (evt) => {
-      if (view !== "dataplane") return;
+      if (view !== "dataplane" && view !== "omp") return;
       const edge = evt.target;
       const ed = edge.data();
       cy.elements().removeClass("highlighted dimmed selected-node selected-edge");
@@ -514,6 +601,17 @@ export default function Topology() {
         { type: "divider" },
         { label: "Double-click node \u2192 Data Plane view", info: true },
       ]
+    : view === "omp"
+    ? [
+        { label: "Selected Device", color: "#FFD600", border: "#FFD600" },
+        { label: "Route Originator", color: ROLE_STYLE.vedge.bg, border: ROLE_STYLE.vedge.border },
+        { type: "divider" },
+        { label: "50+ routes", color: "#00E676", status: true },
+        { label: "10-49 routes", color: "#FFC107", status: true },
+        { label: "1-9 routes", color: "#2196F3", status: true },
+        { type: "divider" },
+        { label: "Click edge for route details", info: true },
+      ]
     : [
         { label: "Selected Device", color: "#FFD600", border: "#FFD600" },
         { label: "Peer", color: ROLE_STYLE.vedge.bg, border: ROLE_STYLE.vedge.border },
@@ -531,6 +629,10 @@ export default function Topology() {
 
   const viewDescription = view === "control"
     ? "Control Plane Hierarchy \u2014 Controllers (top) \u2192 Edge Devices (bottom)"
+    : view === "omp"
+    ? activeIp
+      ? `OMP Routing \u2014 ${selectedDevice?.["host-name"] || activeIp}: ${ompData?.totalRoutes || 0} routes from ${peerCount} peer${peerCount !== 1 ? 's' : ''}`
+      : "Select a device to view its OMP routing topology"
     : activeIp
       ? `Data Plane Topology \u2014 ${selectedDevice?.["host-name"] || activeIp} and its ${peerCount} peer${peerCount !== 1 ? 's' : ''}${hiddenCount > 0 ? ` (+${hiddenCount} hidden)` : ''}`
       : "Select a device to view its data plane connections";
@@ -550,6 +652,9 @@ export default function Topology() {
           </ToggleButton>
           <ToggleButton value="dataplane">
             <BfdIcon sx={{ mr: 0.5, fontSize: 18 }} /> Data Plane
+          </ToggleButton>
+          <ToggleButton value="omp">
+            <RouteIcon sx={{ mr: 0.5, fontSize: 18 }} /> OMP Routes
           </ToggleButton>
         </ToggleButtonGroup>
       </Box>
@@ -637,6 +742,17 @@ export default function Topology() {
                 <Chip label={`${logicalData.healthSummary.down} ✗`} size="small"
                   sx={{ bgcolor: "#FF1744", color: "#fff", fontWeight: 700, fontSize: "0.65rem", minWidth: 32 }} />
               )}
+            </Box>
+          )}
+          {/* OMP Summary badges */}
+          {view === "omp" && ompData && (
+            <Box sx={{ display: "flex", gap: 0.5, ml: 1 }}>
+              <Chip label={`${ompData.totalRoutes || 0} routes`} size="small"
+                sx={{ bgcolor: "#2196F3", color: "#fff", fontWeight: 700, fontSize: "0.65rem" }} />
+              <Chip label={`${ompData.uniqueVpns?.length || 0} VPNs`} size="small"
+                sx={{ bgcolor: "#673AB7", color: "#fff", fontWeight: 700, fontSize: "0.65rem" }} />
+              <Chip label={`${ompData.uniquePrefixes || 0} prefixes`} size="small"
+                sx={{ bgcolor: "#009688", color: "#fff", fontWeight: 700, fontSize: "0.65rem" }} />
             </Box>
           )}
         </Box>
@@ -839,6 +955,78 @@ export default function Topology() {
                   </TableBody>
                 </Table>
               </TableContainer>
+            </>
+          )}
+        </Paper>
+      )}
+
+      {/* OMP Route Detail Panel (when edge is clicked in OMP view) */}
+      {view === "omp" && selectedEdgeInfo && (
+        <Paper variant="outlined" sx={{ p: 2 }}>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 2, flexWrap: "wrap" }}>
+            <Typography variant="h6">Routes from {selectedEdgeInfo.peerHostname || selectedEdgeInfo.target}</Typography>
+            <Chip label={selectedEdgeInfo.target} size="small" variant="outlined" sx={{ fontFamily: "monospace" }} />
+            <Chip label={`${selectedEdgeInfo.routeCount} routes`} size="small" sx={{ bgcolor: "#2196F3", color: "#fff", fontWeight: 700 }} />
+            <Chip label={selectedEdgeInfo.peerType || "edge"} size="small" variant="outlined" />
+            <Chip label={`Site ${selectedEdgeInfo.siteId || "N/A"}`} size="small" variant="outlined" />
+          </Box>
+
+          {/* VPN Summary */}
+          {selectedEdgeInfo.vpnIds && selectedEdgeInfo.vpnIds.length > 0 && (
+            <Box sx={{ display: "flex", gap: 0.5, mb: 2, flexWrap: "wrap", alignItems: "center" }}>
+              <Typography variant="caption" sx={{ color: "text.secondary", mr: 0.5 }}>VPNs:</Typography>
+              {selectedEdgeInfo.vpnIds.map((vpn, i) => (
+                <Chip key={i} label={`VPN ${vpn}`} size="small" sx={{ bgcolor: "#673AB7", color: "#fff", fontSize: "0.65rem", fontWeight: 600 }} />
+              ))}
+            </Box>
+          )}
+
+          {/* Route Table */}
+          {selectedEdgeInfo.routes && selectedEdgeInfo.routes.length > 0 && (
+            <>
+              <Typography variant="subtitle2" sx={{ mb: 1, color: "text.secondary" }}>
+                OMP Routes ({selectedEdgeInfo.routes.length})
+              </Typography>
+              <TableContainer sx={{ maxHeight: 300 }}>
+                <Table size="small" stickyHeader>
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>Prefix</TableCell>
+                      <TableCell>VPN</TableCell>
+                      <TableCell>Protocol</TableCell>
+                      <TableCell>Color</TableCell>
+                      <TableCell>Metric</TableCell>
+                      <TableCell>Status</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {selectedEdgeInfo.routes.slice(0, 50).map((r, i) => (
+                      <TableRow key={i} hover>
+                        <TableCell sx={{ fontFamily: "monospace", fontSize: "0.8rem" }}>{r.prefix || "\u2014"}</TableCell>
+                        <TableCell>{r.vpnId || "\u2014"}</TableCell>
+                        <TableCell>{r.protocol || "\u2014"}</TableCell>
+                        <TableCell>
+                          {r.color ? (
+                            <Chip label={r.color} size="small"
+                              sx={{ bgcolor: TRANSPORT_COLOR[(r.color || "").toLowerCase()] || "#78909C", color: "#fff", fontSize: "0.65rem" }} />
+                          ) : "\u2014"}
+                        </TableCell>
+                        <TableCell>{r.metric || "\u2014"}</TableCell>
+                        <TableCell>
+                          <Chip label={r.status || "\u2014"} size="small"
+                            color={(r.status || "").toLowerCase() === "c" || (r.status || "").toLowerCase() === "installed" ? "success" : "default"}
+                            variant="outlined" sx={{ fontSize: "0.65rem" }} />
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+              {selectedEdgeInfo.routes.length > 50 && (
+                <Typography variant="caption" sx={{ color: "text.secondary", mt: 1, display: "block" }}>
+                  Showing first 50 of {selectedEdgeInfo.routes.length} routes
+                </Typography>
+              )}
             </>
           )}
         </Paper>

@@ -132,6 +132,9 @@ func registerAPIRoutes(r *mux.Router, apiClient *utils.APIClient) {
 	// Logical topology: aggregates BFD sessions into device-to-device relationships
 	r.HandleFunc("/api/topology/logical/{system-ip}",
 		topology.FetchLogicalTopology(apiClient)).Methods("GET")
+	// OMP routing topology: aggregates OMP routes by originator peer
+	r.HandleFunc("/api/topology/omp/{system-ip}",
+		topology.FetchOmpTopology(apiClient)).Methods("GET")
 	// Raw BFD sessions (kept for backward compatibility)
 	r.HandleFunc("/api/topology/{system-ip}",
 		device.FetchWithUUID(apiClient, "dataservice/device/bfd/sessions")).Methods("GET")
