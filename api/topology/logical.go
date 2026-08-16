@@ -62,12 +62,22 @@ type Relationship struct {
 	SiteID            interface{}         `json:"siteId"`
 	Importance        int                 `json:"importance"`
 	HealthStatus      string              `json:"healthStatus"`
+	HealthRatio       float64             `json:"healthRatio"`            // 0.0 to 1.0 ratio of active/total
 	RelationshipTypes []RelationshipType  `json:"relationshipTypes"`      // Which sources this relationship comes from
 	Transports        []TransportSession  `json:"transports"`             // BFD/data-plane details
 	ControlConns      []ControlConnection `json:"controlConns,omitempty"` // Control plane details
 	SiteLinks         []SiteLink          `json:"siteLinks,omitempty"`    // Site topology details
 	ActiveCount       int                 `json:"activeCount"`
 	TotalCount        int                 `json:"totalCount"`
+	UniqueColors      []string            `json:"uniqueColors,omitempty"` // Unique transport colors (diversity)
+}
+
+// HealthSummary provides aggregate health statistics
+type HealthSummary struct {
+	Healthy  int `json:"healthy"`
+	Degraded int `json:"degraded"`
+	Down     int `json:"down"`
+	Unknown  int `json:"unknown"`
 }
 
 // LogicalTopologyResponse is the aggregated topology for a selected device
@@ -77,6 +87,7 @@ type LogicalTopologyResponse struct {
 	Relationships    []Relationship `json:"relationships"`
 	TotalPeers       int            `json:"totalPeers"`
 	HiddenCount      int            `json:"hiddenCount"`
+	HealthSummary    HealthSummary  `json:"healthSummary"`
 }
 
 // rawBFDSession represents the raw BFD data from vManage
@@ -165,11 +176,34 @@ func FetchLogicalTopology(apiClient *utils.APIClient) http.HandlerFunc {
 		// 3. Fetch and process site topology
 		fetchSiteRelationships(apiClient, systemIP, deviceMap, unifiedPeers)
 
-		// Convert map to slice
+		// Convert map to slice and calculate final metrics
 		relationships := make([]Relationship, 0, len(unifiedPeers))
+		healthSummary := HealthSummary{}
+
 		for _, rel := range unifiedPeers {
-			// Recalculate importance with all relationship types considered
+			// Calculate health ratio
+			if rel.TotalCount > 0 {
+				rel.HealthRatio = float64(rel.ActiveCount) / float64(rel.TotalCount)
+			}
+
+			// Extract unique transport colors for diversity tracking
+			rel.UniqueColors = extractUniqueColors(rel.Transports)
+
+			// Recalculate importance with all factors
 			rel.Importance = calculateUnifiedImportance(rel)
+
+			// Update health summary
+			switch rel.HealthStatus {
+			case "healthy":
+				healthSummary.Healthy++
+			case "degraded":
+				healthSummary.Degraded++
+			case "down":
+				healthSummary.Down++
+			default:
+				healthSummary.Unknown++
+			}
+
 			relationships = append(relationships, *rel)
 		}
 
@@ -194,6 +228,7 @@ func FetchLogicalTopology(apiClient *utils.APIClient) http.HandlerFunc {
 			Relationships:    relationships,
 			TotalPeers:       totalPeers,
 			HiddenCount:      hiddenCount,
+			HealthSummary:    healthSummary,
 		}
 
 		log.Printf("🔗 Unified topology for %s: %d peers (%d visible, %d hidden)",
@@ -415,9 +450,31 @@ func calculateHealthStatus(activeCount, totalCount int) string {
 	return "degraded"
 }
 
+// extractUniqueColors extracts unique transport colors from sessions
+func extractUniqueColors(transports []TransportSession) []string {
+	colorSet := make(map[string]bool)
+	for _, t := range transports {
+		if t.Color != "" {
+			colorSet[strings.ToLower(t.Color)] = true
+		}
+	}
+	colors := make([]string, 0, len(colorSet))
+	for c := range colorSet {
+		colors = append(colors, c)
+	}
+	return colors
+}
+
 // calculateUnifiedImportance calculates importance considering all relationship types
+// Scoring factors:
+//   - Device type: controllers > hubs/DCs > edges (0-100)
+//   - Relationship types: bonus for multiple types (+10 each)
+//   - Control plane: bonus for controller connections (+15)
+//   - Transport count: bonus for redundancy (+8 per extra, max +20)
+//   - Transport diversity: bonus for multiple colors/WAN links (+5 per extra, max +15)
+//   - Health: bonus for healthy, penalty for down
 func calculateUnifiedImportance(rel *Relationship) int {
-	// Base score by device type
+	// Base score by device type (0-100)
 	baseScore := getDeviceTypeScore(rel.PeerType)
 
 	// Bonus for multiple relationship types (more connected = more important)
@@ -429,7 +486,7 @@ func calculateUnifiedImportance(rel *Relationship) int {
 		controlBonus = 15
 	}
 
-	// Transport bonuses (from original logic)
+	// Transport count bonus (redundancy)
 	transportBonus := 0
 	if rel.TotalCount >= 2 {
 		transportBonus = (rel.TotalCount - 1) * 8
@@ -438,20 +495,29 @@ func calculateUnifiedImportance(rel *Relationship) int {
 		}
 	}
 
+	// Transport diversity bonus (multiple WAN links = more resilient)
+	diversityBonus := 0
+	if len(rel.UniqueColors) >= 2 {
+		diversityBonus = (len(rel.UniqueColors) - 1) * 5
+		if diversityBonus > 15 {
+			diversityBonus = 15
+		}
+	}
+
 	// Health bonus/penalty
 	healthBonus := 0
 	if rel.TotalCount > 0 {
 		if rel.ActiveCount == rel.TotalCount {
-			healthBonus = 15
+			healthBonus = 15 // All healthy
 		} else if rel.ActiveCount == 0 {
-			healthBonus = -10
+			healthBonus = -10 // All down
 		} else {
-			healthRatio := float64(rel.ActiveCount) / float64(rel.TotalCount)
-			healthBonus = int(healthRatio * 10)
+			// Proportional bonus for partial health
+			healthBonus = int(rel.HealthRatio * 10)
 		}
 	}
 
-	return baseScore + typeBonus + controlBonus + transportBonus + healthBonus
+	return baseScore + typeBonus + controlBonus + transportBonus + diversityBonus + healthBonus
 }
 
 // getDeviceTypeScore returns base importance score for device type

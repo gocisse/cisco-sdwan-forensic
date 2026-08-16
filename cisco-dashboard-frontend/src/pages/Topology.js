@@ -141,16 +141,19 @@ const CY_STYLE = [
     },
   },
   { selector: "edge.control", style: { "line-style": "dashed", "line-dash-pattern": [6, 4], width: 1.5, opacity: 0.55, "target-arrow-shape": "none" } },
-  { selector: "edge.down", style: { "line-color": "#FF1744", "target-arrow-color": "#FF1744", width: 3, opacity: 1 } },
+  { selector: "edge.down", style: { "line-color": "#FF1744", "target-arrow-color": "#FF1744", opacity: 1 } },
   { selector: "edge.bfd", style: { width: 2.5, opacity: 0.85, "target-arrow-shape": "none" } },
-  { selector: "edge.relationship", style: { width: 3, opacity: 0.9, "target-arrow-shape": "none", "curve-style": "bezier" } },
+  // Relationship edges use dynamic width from data
+  { selector: "edge.relationship", style: { width: "data(width)", opacity: 0.9, "target-arrow-shape": "none", "curve-style": "bezier" } },
   { selector: "edge.relationship.degraded", style: { "line-style": "dashed", "line-dash-pattern": [8, 4] } },
+  { selector: "edge.relationship.down", style: { "line-style": "dotted", "line-dash-pattern": [2, 4] } },
+  { selector: "edge.relationship.multi-type", style: { "line-style": "solid", "border-width": 1 } },
   { selector: "node.dimmed", style: { opacity: 0.12 } },
   { selector: "edge.dimmed", style: { opacity: 0.06 } },
   { selector: "node.highlighted", style: { opacity: 1, "border-width": 5, "z-index": 999 } },
-  { selector: "edge.highlighted", style: { opacity: 1, width: 3.5, "z-index": 999 } },
+  { selector: "edge.highlighted", style: { opacity: 1, "z-index": 999 } },
   { selector: "node.selected-node", style: { "border-width": 6, "border-color": "#FFD600", "shadow-blur": 20, "shadow-color": "#FFD600", "shadow-opacity": 0.9, "z-index": 9999 } },
-  { selector: "edge.selected-edge", style: { width: 5, opacity: 1, "z-index": 9999 } },
+  { selector: "edge.selected-edge", style: { opacity: 1, "z-index": 9999 } },
 ];
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -313,15 +316,20 @@ export default function Topology() {
         nodesMap[peerIP] = makeNode(peerDev, peerIP);
       }
 
-      // Determine edge color based on health status
+      // Determine edge color and width based on health status and ratio
       let edgeColor = "#78909C"; // default gray
       if (rel.healthStatus === "healthy") edgeColor = "#00E676";
       else if (rel.healthStatus === "degraded") edgeColor = "#FFC107";
       else if (rel.healthStatus === "down") edgeColor = "#FF1744";
 
+      // Edge width based on transport count (more transports = thicker)
+      const edgeWidth = Math.min(2 + (rel.totalCount || 1), 6);
+
       const classes = ["relationship"];
       if (rel.healthStatus === "down") classes.push("down");
       if (rel.healthStatus === "degraded") classes.push("degraded");
+      // Add class for multi-type relationships
+      if ((rel.relationshipTypes || []).length > 1) classes.push("multi-type");
 
       edgesList.push({
         data: {
@@ -329,13 +337,16 @@ export default function Topology() {
           source: activeIp,
           target: peerIP,
           color: edgeColor,
+          width: edgeWidth,
           healthStatus: rel.healthStatus,
+          healthRatio: rel.healthRatio,
           activeCount: rel.activeCount,
           totalCount: rel.totalCount,
           transports: rel.transports,
           controlConns: rel.controlConns,
           siteLinks: rel.siteLinks,
           relationshipTypes: rel.relationshipTypes,
+          uniqueColors: rel.uniqueColors,
           peerHostname: rel.peerHostname,
           peerType: rel.peerType,
           siteId: rel.siteId,
@@ -611,6 +622,23 @@ export default function Topology() {
               }}
             />
           )}
+          {/* Health Summary badges for data plane view */}
+          {view === "dataplane" && logicalData?.healthSummary && (
+            <Box sx={{ display: "flex", gap: 0.5, ml: 1 }}>
+              {logicalData.healthSummary.healthy > 0 && (
+                <Chip label={`${logicalData.healthSummary.healthy} ✓`} size="small"
+                  sx={{ bgcolor: "#00E676", color: "#000", fontWeight: 700, fontSize: "0.65rem", minWidth: 32 }} />
+              )}
+              {logicalData.healthSummary.degraded > 0 && (
+                <Chip label={`${logicalData.healthSummary.degraded} ⚠`} size="small"
+                  sx={{ bgcolor: "#FFC107", color: "#000", fontWeight: 700, fontSize: "0.65rem", minWidth: 32 }} />
+              )}
+              {logicalData.healthSummary.down > 0 && (
+                <Chip label={`${logicalData.healthSummary.down} ✗`} size="small"
+                  sx={{ bgcolor: "#FF1744", color: "#fff", fontWeight: 700, fontSize: "0.65rem", minWidth: 32 }} />
+              )}
+            </Box>
+          )}
         </Box>
 
         <Box ref={containerRef} sx={{ width: "100%", height: "100%" }} />
@@ -654,22 +682,49 @@ export default function Topology() {
             <Chip label={`Site ${selectedEdgeInfo.siteId || "N/A"}`} size="small" variant="outlined" />
           </Box>
 
-          {/* Relationship Types */}
-          <Box sx={{ display: "flex", gap: 0.5, mb: 2, flexWrap: "wrap", alignItems: "center" }}>
-            <Typography variant="caption" sx={{ color: "text.secondary", mr: 1 }}>Relationship Types:</Typography>
-            {(selectedEdgeInfo.relationshipTypes || []).map((type, i) => (
-              <Chip 
-                key={i}
-                label={type === "data-plane" ? "Data Plane" : type === "control" ? "Control" : "Site"}
-                size="small"
-                sx={{ 
-                  bgcolor: type === "data-plane" ? "#2196F3" : type === "control" ? "#9C27B0" : "#FF9800",
-                  color: "#fff",
-                  fontSize: "0.65rem",
-                  fontWeight: 600
-                }}
-              />
-            ))}
+          {/* Relationship Types and Transport Diversity */}
+          <Box sx={{ display: "flex", gap: 2, mb: 2, flexWrap: "wrap", alignItems: "center" }}>
+            <Box sx={{ display: "flex", gap: 0.5, alignItems: "center" }}>
+              <Typography variant="caption" sx={{ color: "text.secondary", mr: 0.5 }}>Types:</Typography>
+              {(selectedEdgeInfo.relationshipTypes || []).map((type, i) => (
+                <Chip 
+                  key={i}
+                  label={type === "data-plane" ? "Data Plane" : type === "control" ? "Control" : "Site"}
+                  size="small"
+                  sx={{ 
+                    bgcolor: type === "data-plane" ? "#2196F3" : type === "control" ? "#9C27B0" : "#FF9800",
+                    color: "#fff",
+                    fontSize: "0.65rem",
+                    fontWeight: 600
+                  }}
+                />
+              ))}
+            </Box>
+            {/* Transport Diversity */}
+            {selectedEdgeInfo.uniqueColors && selectedEdgeInfo.uniqueColors.length > 0 && (
+              <Box sx={{ display: "flex", gap: 0.5, alignItems: "center" }}>
+                <Typography variant="caption" sx={{ color: "text.secondary", mr: 0.5 }}>WAN Links:</Typography>
+                {selectedEdgeInfo.uniqueColors.map((color, i) => (
+                  <Chip 
+                    key={i}
+                    label={color}
+                    size="small"
+                    sx={{ 
+                      bgcolor: TRANSPORT_COLOR[color.toLowerCase()] || "#78909C",
+                      color: "#fff",
+                      fontSize: "0.6rem",
+                      fontWeight: 600
+                    }}
+                  />
+                ))}
+              </Box>
+            )}
+            {/* Health Ratio */}
+            {selectedEdgeInfo.healthRatio !== undefined && selectedEdgeInfo.totalCount > 0 && (
+              <Typography variant="caption" sx={{ color: "text.secondary" }}>
+                Health: {Math.round(selectedEdgeInfo.healthRatio * 100)}%
+              </Typography>
+            )}
           </Box>
 
           {/* Data Plane / Transport Details */}
