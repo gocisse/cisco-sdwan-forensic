@@ -18,9 +18,11 @@ import {
   Analytics as AnalyticsIcon,
   Hub as HubIcon,
   NavigateNext as NavNextIcon,
+  SimCard as SimCardIcon,
 } from "@mui/icons-material";
 import useApiFetch from "../hooks/useApiFetch";
 import LoadingSpinner from "../components/LoadingSpinner";
+import CellularStatus from "../components/CellularStatus";
 
 const quickNav = [
   { label: "BFD Sessions", path: "/realtime/bfd", icon: <SpeedIcon fontSize="small" /> },
@@ -113,6 +115,14 @@ export default function DeviceDetail() {
           </Grid>
         </CardContent>
       </Card>
+
+      {/* Cellular Status Section */}
+      <Box sx={{ mb: 3 }}>
+        <Typography variant="h6" sx={{ mb: 2, display: "flex", alignItems: "center", gap: 1 }}>
+          <SimCardIcon /> Cellular / LTE
+        </Typography>
+        <CellularStatus systemIp={systemIp} />
+      </Box>
 
       {/* Quick Navigation */}
       <Typography variant="h6" sx={{ mb: 2 }}>Quick Navigation</Typography>

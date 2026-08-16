@@ -128,6 +128,20 @@ func registerAPIRoutes(r *mux.Router, apiClient *utils.APIClient) {
 	r.HandleFunc("/api/ipsec/{system-ip}",
 		device.FetchWithUUID(apiClient, "dataservice/device/ipsec/localsa")).Methods("GET")
 
+	// ─── Cellular / LTE ─────────────────────────────────────────────────
+	// Aggregated status (hierarchical: connection first, then details if connected)
+	r.HandleFunc("/api/cellular/{system-ip}",
+		device.FetchCellularStatus(apiClient)).Methods("GET")
+	// Individual endpoints for granular access
+	r.HandleFunc("/api/cellular/connection/{system-ip}",
+		device.FetchCellularConnection(apiClient)).Methods("GET")
+	r.HandleFunc("/api/cellular/session/{system-ip}",
+		device.FetchCellularSession(apiClient)).Methods("GET")
+	r.HandleFunc("/api/cellular/hardware/{system-ip}",
+		device.FetchCellularHardware(apiClient)).Methods("GET")
+	r.HandleFunc("/api/cellular/transport/{system-ip}",
+		device.FetchCellularTransport(apiClient)).Methods("GET")
+
 	// ─── Topology ───────────────────────────────────────────────────────
 	// Logical topology: aggregates BFD sessions into device-to-device relationships
 	r.HandleFunc("/api/topology/logical/{system-ip}",
