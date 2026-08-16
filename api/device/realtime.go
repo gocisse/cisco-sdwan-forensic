@@ -46,13 +46,9 @@ func FetchOmpRoutes(apiClient *utils.APIClient, vManageEndpoint string) http.Han
 			return
 		}
 
-		deviceID := dev.UUID
-		if deviceID == "" {
-			deviceID = systemIP
-		}
-
-		fullEndpoint := fmt.Sprintf("%s?deviceId=%s", vManageEndpoint, deviceID)
-		log.Printf("📡 OMP routes: system-ip=%s → deviceId=%s → %s", systemIP, deviceID, fullEndpoint)
+		// Use system-ip as deviceId (vManage expects IP, not UUID)
+		fullEndpoint := fmt.Sprintf("%s?deviceId=%s", vManageEndpoint, systemIP)
+		log.Printf("📡 OMP routes: system-ip=%s → %s", systemIP, fullEndpoint)
 
 		rawData, err := apiClient.Get(fullEndpoint)
 		if err != nil {
@@ -105,8 +101,9 @@ func FetchOmpRoutes(apiClient *utils.APIClient, vManageEndpoint string) http.Han
 	}
 }
 
-// FetchWithUUID creates a handler that resolves system-ip to device UUID before
-// calling the given vManage endpoint with ?deviceId={uuid}.
+// FetchWithUUID creates a handler that calls vManage endpoint with ?deviceId={system-ip}.
+// Note: Despite the name, most vManage device statistics endpoints expect system-ip as deviceId,
+// not the UUID. The UUID is only needed for certain endpoints like templates.
 // It unwraps the standard {"data": [...]} envelope.
 func FetchWithUUID(apiClient *utils.APIClient, vManageEndpoint string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -116,7 +113,7 @@ func FetchWithUUID(apiClient *utils.APIClient, vManageEndpoint string) http.Hand
 			return
 		}
 
-		// Resolve system-ip → device UUID
+		// Verify device exists
 		dev, err := findDevice(apiClient, systemIP)
 		if err != nil {
 			log.Printf("Device lookup error: %v", err)
@@ -129,13 +126,9 @@ func FetchWithUUID(apiClient *utils.APIClient, vManageEndpoint string) http.Hand
 			return
 		}
 
-		deviceID := dev.UUID
-		if deviceID == "" {
-			deviceID = systemIP // fallback for older vManage versions
-		}
-
-		fullEndpoint := fmt.Sprintf("%s?deviceId=%s", vManageEndpoint, deviceID)
-		log.Printf("📡 UUID-resolved: system-ip=%s → deviceId=%s → %s", systemIP, deviceID, fullEndpoint)
+		// Use system-ip as deviceId (vManage device stats endpoints expect IP, not UUID)
+		fullEndpoint := fmt.Sprintf("%s?deviceId=%s", vManageEndpoint, systemIP)
+		log.Printf("📡 Fetching: system-ip=%s → %s", systemIP, fullEndpoint)
 
 		rawData, err := apiClient.Get(fullEndpoint)
 		if err != nil {

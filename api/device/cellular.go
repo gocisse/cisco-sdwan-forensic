@@ -131,7 +131,7 @@ func FetchCellularStatus(apiClient *utils.APIClient) http.HandlerFunc {
 			return
 		}
 
-		// Resolve system-ip to device UUID
+		// Verify device exists
 		dev, err := findDevice(apiClient, systemIP)
 		if err != nil {
 			log.Printf("Device lookup error: %v", err)
@@ -144,11 +144,7 @@ func FetchCellularStatus(apiClient *utils.APIClient) http.HandlerFunc {
 			return
 		}
 
-		deviceID := dev.UUID
-		if deviceID == "" {
-			deviceID = systemIP
-		}
-
+		// Use system-ip as deviceId (vManage expects IP, not UUID)
 		status := CellularStatus{
 			HasCellular: false,
 			IsConnected: false,
@@ -156,7 +152,7 @@ func FetchCellularStatus(apiClient *utils.APIClient) http.HandlerFunc {
 		}
 
 		// Step 1: Fetch connection status (lightweight, always fetch)
-		connEndpoint := fmt.Sprintf("dataservice/device/cellular/connection?deviceId=%s", deviceID)
+		connEndpoint := fmt.Sprintf("dataservice/device/cellular/connection?deviceId=%s", systemIP)
 		connData, err := apiClient.Get(connEndpoint)
 		if err != nil {
 			log.Printf("Cellular connection fetch error: %v", err)
@@ -234,7 +230,7 @@ func FetchCellularStatus(apiClient *utils.APIClient) http.HandlerFunc {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				endpoint := fmt.Sprintf("dataservice/device/cellularEiolte/connections?deviceId=%s", deviceID)
+				endpoint := fmt.Sprintf("dataservice/device/cellularEiolte/connections?deviceId=%s", systemIP)
 				data, err := apiClient.Get(endpoint)
 				if err != nil {
 					log.Printf("EIOLTE session fetch error: %v", err)
@@ -254,7 +250,7 @@ func FetchCellularStatus(apiClient *utils.APIClient) http.HandlerFunc {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				endpoint := fmt.Sprintf("dataservice/device/cellularEiolte/hardware?deviceId=%s", deviceID)
+				endpoint := fmt.Sprintf("dataservice/device/cellularEiolte/hardware?deviceId=%s", systemIP)
 				data, err := apiClient.Get(endpoint)
 				if err != nil {
 					log.Printf("Cellular hardware fetch error: %v", err)
@@ -290,7 +286,7 @@ func FetchCellularStatus(apiClient *utils.APIClient) http.HandlerFunc {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				endpoint := fmt.Sprintf("dataservice/device/transport/connection?deviceId=%s", deviceID)
+				endpoint := fmt.Sprintf("dataservice/device/transport/connection?deviceId=%s", systemIP)
 				data, err := apiClient.Get(endpoint)
 				if err != nil {
 					log.Printf("Transport connection fetch error: %v", err)

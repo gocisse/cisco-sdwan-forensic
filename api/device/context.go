@@ -142,6 +142,73 @@ func resolveTemplateID(apiClient *utils.APIClient, templateName string) (string,
 	return "", fmt.Errorf("no device template found with name %q", templateName)
 }
 
+// findTemplateForDevice looks up which device template is attached to a device by UUID.
+// This is needed because /dataservice/device doesn't include template info.
+// We fetch /dataservice/template/device and check each template's attached devices.
+func findTemplateForDevice(apiClient *utils.APIClient, deviceUUID string) (templateName string, templateID string, err error) {
+	rawData, err := apiClient.Get("dataservice/template/device")
+	if err != nil {
+		return "", "", fmt.Errorf("failed to fetch device templates: %w", err)
+	}
+
+	var envelope struct {
+		Data []struct {
+			TemplateName    string   `json:"templateName"`
+			TemplateID      string   `json:"templateId"`
+			DevicesAttached int      `json:"devicesAttached"`
+			AttachedDevices []string `json:"attached_devices"` // List of device UUIDs
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rawData, &envelope); err != nil {
+		return "", "", fmt.Errorf("failed to parse device templates: %w", err)
+	}
+
+	// Search through templates to find one that has this device attached
+	for _, t := range envelope.Data {
+		if t.DevicesAttached == 0 {
+			continue
+		}
+		// Check if device UUID is in the attached_devices list
+		for _, attachedUUID := range t.AttachedDevices {
+			if attachedUUID == deviceUUID {
+				log.Printf("🔍 Found template for device %s: %q (ID: %s)", deviceUUID, t.TemplateName, t.TemplateID)
+				return t.TemplateName, t.TemplateID, nil
+			}
+		}
+	}
+
+	// If not found in attached_devices, try fetching attached config for each template
+	// This is a fallback for when attached_devices isn't populated
+	for _, t := range envelope.Data {
+		if t.DevicesAttached == 0 {
+			continue
+		}
+		// Fetch attached devices for this template
+		attachedEndpoint := fmt.Sprintf("dataservice/template/device/config/attached/%s", t.TemplateID)
+		attachedData, err := apiClient.Get(attachedEndpoint)
+		if err != nil {
+			continue
+		}
+		var attachedEnvelope struct {
+			Data []struct {
+				UUID     string `json:"uuid"`
+				SystemIP string `json:"system-ip"`
+			} `json:"data"`
+		}
+		if json.Unmarshal(attachedData, &attachedEnvelope) != nil {
+			continue
+		}
+		for _, dev := range attachedEnvelope.Data {
+			if dev.UUID == deviceUUID {
+				log.Printf("🔍 Found template for device %s via attached config: %q (ID: %s)", deviceUUID, t.TemplateName, t.TemplateID)
+				return t.TemplateName, t.TemplateID, nil
+			}
+		}
+	}
+
+	return "", "", nil // No template attached
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 // Handlers
 // ──────────────────────────────────────────────────────────────────────────────
@@ -168,6 +235,20 @@ func FetchDeviceDetails(apiClient *utils.APIClient) http.HandlerFunc {
 			return
 		}
 
+		// If template info is missing, look it up from template list
+		templateName := dev.Template
+		templateID := dev.TemplateID
+		if templateID == "" && dev.UUID != "" {
+			log.Printf("🔍 Device %s has no template info, looking up by UUID %s", systemIP, dev.UUID)
+			name, id, err := findTemplateForDevice(apiClient, dev.UUID)
+			if err != nil {
+				log.Printf("⚠️ Template lookup error for %s: %v", systemIP, err)
+			} else if id != "" {
+				templateName = name
+				templateID = id
+			}
+		}
+
 		details := DeviceDetails{
 			SystemIP:           dev.SystemIP,
 			HostName:           dev.HostName,
@@ -177,8 +258,8 @@ func FetchDeviceDetails(apiClient *utils.APIClient) http.HandlerFunc {
 			Reachability:       dev.Reach,
 			Status:             dev.Status,
 			DeviceOS:           dev.DeviceOS,
-			Template:           dev.Template,
-			TemplateID:         dev.TemplateID,
+			Template:           templateName,
+			TemplateID:         templateID,
 			CertValidity:       dev.CertValid,
 			ControlConnections: dev.CtrlConns,
 			UptimeDate:         dev.UptimeDate,
@@ -216,18 +297,26 @@ func FetchDeviceTemplates(apiClient *utils.APIClient) http.HandlerFunc {
 			return
 		}
 		// Resolve template ID: prefer templateId from device record,
-		// fall back to looking up by template name via /dataservice/template/device
+		// fall back to looking up by template name or by device UUID
 		templateID := dev.TemplateID
 		if templateID == "" && dev.Template != "" {
 			log.Printf("⚠️ Device %s has template name %q but no templateId — resolving by name", systemIP, dev.Template)
 			resolved, err := resolveTemplateID(apiClient, dev.Template)
 			if err != nil {
 				log.Printf("Template name resolution error for %s: %v", systemIP, err)
-				middleware.WriteError(w, http.StatusNotFound, "NO_TEMPLATE",
-					fmt.Sprintf("Device %s: could not resolve template %q", systemIP, dev.Template))
-				return
+			} else {
+				templateID = resolved
 			}
-			templateID = resolved
+		}
+		// If still no templateID, try looking up by device UUID
+		if templateID == "" && dev.UUID != "" {
+			log.Printf("🔍 Device %s has no template info, looking up by UUID %s", systemIP, dev.UUID)
+			_, id, err := findTemplateForDevice(apiClient, dev.UUID)
+			if err != nil {
+				log.Printf("⚠️ Template lookup error for %s: %v", systemIP, err)
+			} else if id != "" {
+				templateID = id
+			}
 		}
 		if templateID == "" {
 			middleware.WriteError(w, http.StatusNotFound, "NO_TEMPLATE",
