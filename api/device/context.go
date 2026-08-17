@@ -145,6 +145,7 @@ func resolveTemplateID(apiClient *utils.APIClient, templateName string) (string,
 // findTemplateForDevice looks up which device template is attached to a device by UUID.
 // This is needed because /dataservice/device doesn't include template info.
 // We fetch /dataservice/template/device and check each template's attached devices.
+// NOTE: This is optimized to avoid making per-template API calls which would be very slow.
 func findTemplateForDevice(apiClient *utils.APIClient, deviceUUID string) (templateName string, templateID string, err error) {
 	rawData, err := apiClient.Get("dataservice/template/device")
 	if err != nil {
@@ -177,35 +178,9 @@ func findTemplateForDevice(apiClient *utils.APIClient, deviceUUID string) (templ
 		}
 	}
 
-	// If not found in attached_devices, try fetching attached config for each template
-	// This is a fallback for when attached_devices isn't populated
-	for _, t := range envelope.Data {
-		if t.DevicesAttached == 0 {
-			continue
-		}
-		// Fetch attached devices for this template
-		attachedEndpoint := fmt.Sprintf("dataservice/template/device/config/attached/%s", t.TemplateID)
-		attachedData, err := apiClient.Get(attachedEndpoint)
-		if err != nil {
-			continue
-		}
-		var attachedEnvelope struct {
-			Data []struct {
-				UUID     string `json:"uuid"`
-				SystemIP string `json:"system-ip"`
-			} `json:"data"`
-		}
-		if json.Unmarshal(attachedData, &attachedEnvelope) != nil {
-			continue
-		}
-		for _, dev := range attachedEnvelope.Data {
-			if dev.UUID == deviceUUID {
-				log.Printf("🔍 Found template for device %s via attached config: %q (ID: %s)", deviceUUID, t.TemplateName, t.TemplateID)
-				return t.TemplateName, t.TemplateID, nil
-			}
-		}
-	}
-
+	// Not found - don't do expensive per-template API calls
+	// The attached_devices field should be populated in modern vManage versions
+	log.Printf("⚠️ Template not found for device %s in attached_devices lists", deviceUUID)
 	return "", "", nil // No template attached
 }
 

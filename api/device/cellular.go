@@ -182,17 +182,42 @@ func FetchCellularStatus(apiClient *utils.APIClient) http.HandlerFunc {
 
 		// Parse connection data to determine if connected
 		for _, raw := range connEnvelope.Data {
+			// Log raw data for debugging
+			log.Printf("📱 Raw cellular connection data: %s", string(raw))
+
 			var conn struct {
-				Interface      string `json:"if-name"`
-				IPAddress      string `json:"ip-address"`
-				SessionState   string `json:"session-state"`
-				PacketState    string `json:"pkt-session-status"`
-				RadioMode      string `json:"radio-mode"`
-				SignalStrength string `json:"signal-strength"`
-				RSSI           int    `json:"rssi"`
+				Interface       string `json:"if-name"`
+				IPAddress       string `json:"ip-address"`
+				IPv4Address     string `json:"ipv4-address"`
+				SessionState    string `json:"session-state"`
+				PacketState     string `json:"pkt-session-status"`
+				ConnectionState string `json:"connection-state"`
+				DataState       string `json:"data-state"`
+				RadioMode       string `json:"radio-mode"`
+				SignalStrength  string `json:"signal-strength"`
+				RSSI            int    `json:"rssi"`
+				Modem           string `json:"modem"`
+				Profile         string `json:"profile"`
 			}
 			if json.Unmarshal(raw, &conn) == nil {
-				isConn := conn.SessionState == "active" || conn.PacketState == "active" || conn.IPAddress != ""
+				// Check multiple fields that could indicate connection status
+				ipAddr := conn.IPAddress
+				if ipAddr == "" {
+					ipAddr = conn.IPv4Address
+				}
+
+				// Connection is up if: has IP, or session/packet/connection/data state indicates active
+				sessionUp := conn.SessionState == "active" || conn.SessionState == "up" || conn.SessionState == "connected"
+				packetUp := conn.PacketState == "active" || conn.PacketState == "up"
+				connUp := conn.ConnectionState == "active" || conn.ConnectionState == "up" || conn.ConnectionState == "connected"
+				dataUp := conn.DataState == "active" || conn.DataState == "up" || conn.DataState == "connected"
+				hasIP := ipAddr != "" && ipAddr != "0.0.0.0"
+
+				isConn := sessionUp || packetUp || connUp || dataUp || hasIP
+
+				log.Printf("📱 Cellular %s: IP=%s, session=%s, packet=%s, conn=%s, data=%s → isConnected=%v",
+					conn.Interface, ipAddr, conn.SessionState, conn.PacketState, conn.ConnectionState, conn.DataState, isConn)
+
 				if isConn {
 					status.IsConnected = true
 				}
@@ -213,7 +238,7 @@ func FetchCellularStatus(apiClient *utils.APIClient) http.HandlerFunc {
 
 				status.Interfaces = append(status.Interfaces, CellularInterface{
 					Name:        conn.Interface,
-					IPAddress:   conn.IPAddress,
+					IPAddress:   ipAddr,
 					IsConnected: isConn,
 					SignalBars:  signalBars,
 					RadioMode:   conn.RadioMode,
