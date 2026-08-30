@@ -31,6 +31,7 @@ import {
   Speed as SpeedIcon,
   Error as ErrorIcon,
   CheckCircle as CheckIcon,
+  CellTower as RadioIcon,
 } from "@mui/icons-material";
 
 // Signal strength icon based on bars (0-5)
@@ -54,18 +55,30 @@ const SignalIcon = ({ bars, connected }) => {
 
 // Format bytes to human readable
 const formatBytes = (bytes) => {
-  if (!bytes || bytes === 0) return "0 B";
+  if (bytes === undefined || bytes === null || isNaN(bytes)) return "—";
+  if (bytes === 0) return "0 B";
   const k = 1024;
   const sizes = ["B", "KB", "MB", "GB", "TB"];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
 };
 
+// Parse raw JSON data
+const parseRawData = (rawArray) => {
+  return (rawArray || []).map((raw) => {
+    try {
+      return typeof raw === "string" ? JSON.parse(raw) : raw;
+    } catch {
+      return raw;
+    }
+  });
+};
+
 export default function CellularStatus({ systemIp }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [data, setData] = useState(null);
-  const [expanded, setExpanded] = useState({});
+  const [expanded, setExpanded] = useState({ connection: true });
 
   const fetchCellularStatus = useCallback(async () => {
     if (!systemIp) return;
@@ -75,6 +88,7 @@ export default function CellularStatus({ systemIp }) {
       const res = await fetch(`/api/cellular/${systemIp}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
+      console.log("Cellular data:", json); // Debug log
       setData(json);
     } catch (e) {
       console.error("Cellular fetch error:", e);
@@ -111,38 +125,31 @@ export default function CellularStatus({ systemIp }) {
     );
   }
 
-  // Parse connection data for display
-  const connections = (data.connection || []).map((raw) => {
-    try {
-      return typeof raw === "string" ? JSON.parse(raw) : raw;
-    } catch {
-      return raw;
-    }
-  });
+  // Parse raw data arrays
+  const connections = parseRawData(data.connection);
+  const sessions = parseRawData(data.session);
+  const hardware = parseRawData(data.hardware);
+  const radios = parseRawData(data.radio);
+  const transports = parseRawData(data.transport);
 
-  const sessions = (data.session || []).map((raw) => {
-    try {
-      return typeof raw === "string" ? JSON.parse(raw) : raw;
-    } catch {
-      return raw;
-    }
-  });
+  // Use interfaces array as primary source (already merged by backend)
+  const interfaces = data.interfaces || [];
 
-  const hardware = (data.hardware || []).map((raw) => {
-    try {
-      return typeof raw === "string" ? JSON.parse(raw) : raw;
-    } catch {
-      return raw;
-    }
-  });
+  // Find connection data for an interface
+  const findConnectionData = (ifaceName) => {
+    return connections.find(c => 
+      c["if-name"] === ifaceName || 
+      c["cellular-interface-name"] === ifaceName
+    ) || {};
+  };
 
-  const transports = (data.transport || []).map((raw) => {
-    try {
-      return typeof raw === "string" ? JSON.parse(raw) : raw;
-    } catch {
-      return raw;
-    }
-  });
+  // Find radio data for an interface
+  const findRadioData = (ifaceName) => {
+    return radios.find(r => 
+      r["cellular-interface-name"] === ifaceName || 
+      r["if-name"] === ifaceName
+    ) || {};
+  };
 
   return (
     <Box>
@@ -159,14 +166,14 @@ export default function CellularStatus({ systemIp }) {
             sx={{ fontWeight: 700 }}
           />
           <Chip
-            label={`${data.interfaces?.length || 0} Interface${data.interfaces?.length !== 1 ? "s" : ""}`}
+            label={`${interfaces.length} Interface${interfaces.length !== 1 ? "s" : ""}`}
             variant="outlined"
           />
         </Box>
 
         {/* Interface Cards */}
         <Box sx={{ display: "flex", gap: 2, mt: 2, flexWrap: "wrap" }}>
-          {(data.interfaces || []).map((iface, idx) => (
+          {interfaces.map((iface, idx) => (
             <Paper
               key={idx}
               elevation={2}
@@ -184,10 +191,13 @@ export default function CellularStatus({ systemIp }) {
                 </Typography>
               </Box>
               <Typography variant="body2" sx={{ fontFamily: "monospace" }}>
-                {iface.ipAddress || "No IP"}
+                {iface.ipAddress || "0.0.0.0"}
               </Typography>
               {iface.radioMode && (
                 <Chip label={iface.radioMode} size="small" sx={{ mt: 1, mr: 0.5 }} />
+              )}
+              {iface.band && (
+                <Chip label={iface.band} size="small" color="info" variant="outlined" sx={{ mt: 1, mr: 0.5 }} />
               )}
               {iface.carrier && (
                 <Chip label={iface.carrier} size="small" variant="outlined" sx={{ mt: 1 }} />
@@ -197,14 +207,95 @@ export default function CellularStatus({ systemIp }) {
         </Box>
       </Paper>
 
-      {/* Connection Details */}
-      {connections.length > 0 && (
-        <Accordion expanded={expanded.connection} onChange={handleAccordionChange("connection")}>
+      {/* Connection Details - Using interfaces array */}
+      <Accordion expanded={expanded.connection !== false} onChange={handleAccordionChange("connection")}>
+        <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+            <SpeedIcon color="primary" />
+            <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+              Connection Details
+            </Typography>
+          </Box>
+        </AccordionSummary>
+        <AccordionDetails>
+          <TableContainer>
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell>Interface</TableCell>
+                  <TableCell>IP Address</TableCell>
+                  <TableCell>Radio Mode</TableCell>
+                  <TableCell>Band</TableCell>
+                  <TableCell>Signal</TableCell>
+                  <TableCell>RX/TX Packets</TableCell>
+                  <TableCell>RX/TX Bytes</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {interfaces.map((iface, idx) => {
+                  const conn = findConnectionData(iface.name);
+                  const radio = findRadioData(iface.name);
+                  
+                  // Get signal values from interface or radio data
+                  const rssi = iface.rssi || radio.RSSI || conn.rssi;
+                  const rsrp = iface.rsrp || radio.RSRP || conn.rsrp;
+                  const rsrq = iface.rsrq || radio.RSRQ || conn.rsrq;
+                  const snr = iface.snr || radio.SNR || conn.snr;
+                  
+                  // Parse RSSI for progress bar (handle string or number)
+                  let rssiNum = typeof rssi === 'string' ? parseInt(rssi, 10) : rssi;
+                  if (isNaN(rssiNum)) rssiNum = -100;
+                  
+                  return (
+                    <TableRow key={idx} hover>
+                      <TableCell sx={{ fontWeight: 600 }}>{iface.name || `Cellular ${idx}`}</TableCell>
+                      <TableCell sx={{ fontFamily: "monospace" }}>{iface.ipAddress || "0.0.0.0"}</TableCell>
+                      <TableCell>
+                        {iface.radioMode ? (
+                          <Chip label={iface.radioMode} size="small" />
+                        ) : "—"}
+                      </TableCell>
+                      <TableCell>{iface.band || "—"}</TableCell>
+                      <TableCell>
+                        <Tooltip title={`RSSI: ${rssi || "—"} dBm, RSRP: ${rsrp || "—"}, RSRQ: ${rsrq || "—"}, SNR: ${snr || "—"}`}>
+                          <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+                            <LinearProgress
+                              variant="determinate"
+                              value={Math.min(100, Math.max(0, (rssiNum + 120) * 1.25))}
+                              sx={{ width: 60, height: 8, borderRadius: 1 }}
+                              color={rssiNum >= -75 ? "success" : rssiNum >= -95 ? "warning" : "error"}
+                            />
+                            <Typography variant="caption">{rssi || "—"} dBm</Typography>
+                          </Box>
+                        </Tooltip>
+                      </TableCell>
+                      <TableCell>
+                        {conn["rx-packets"] !== undefined 
+                          ? `${conn["rx-packets"]?.toLocaleString() || 0} / ${conn["tx-packets"]?.toLocaleString() || 0}`
+                          : "—"}
+                      </TableCell>
+                      <TableCell>
+                        {conn["rx-bytes"] !== undefined 
+                          ? `${formatBytes(conn["rx-bytes"])} / ${formatBytes(conn["tx-bytes"])}`
+                          : "—"}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </AccordionDetails>
+      </Accordion>
+
+      {/* Radio Details (if available) */}
+      {radios.length > 0 && (
+        <Accordion expanded={expanded.radio} onChange={handleAccordionChange("radio")}>
           <AccordionSummary expandIcon={<ExpandMoreIcon />}>
             <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-              <SpeedIcon color="primary" />
+              <RadioIcon color="secondary" />
               <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
-                Connection Details
+                Radio Information
               </Typography>
             </Box>
           </AccordionSummary>
@@ -214,42 +305,44 @@ export default function CellularStatus({ systemIp }) {
                 <TableHead>
                   <TableRow>
                     <TableCell>Interface</TableCell>
-                    <TableCell>IP Address</TableCell>
-                    <TableCell>Radio Mode</TableCell>
+                    <TableCell>Status</TableCell>
+                    <TableCell>RAT</TableCell>
                     <TableCell>Band</TableCell>
-                    <TableCell>Signal</TableCell>
-                    <TableCell>RX/TX Packets</TableCell>
-                    <TableCell>RX/TX Bytes</TableCell>
+                    <TableCell>RSSI</TableCell>
+                    <TableCell>RSRP</TableCell>
+                    <TableCell>RSRQ</TableCell>
+                    <TableCell>SNR</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {connections.map((conn, idx) => (
+                  {radios.map((radio, idx) => (
                     <TableRow key={idx} hover>
-                      <TableCell>{conn["if-name"] || "—"}</TableCell>
-                      <TableCell sx={{ fontFamily: "monospace" }}>{conn["ip-address"] || "—"}</TableCell>
-                      <TableCell>
-                        <Chip label={conn["radio-mode"] || "—"} size="small" />
-                      </TableCell>
-                      <TableCell>{conn.band || "—"}</TableCell>
-                      <TableCell>
-                        <Tooltip title={`RSSI: ${conn.rssi || "—"} dBm, RSRP: ${conn.rsrp || "—"}, RSRQ: ${conn.rsrq || "—"}, SNR: ${conn.snr || "—"}`}>
-                          <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-                            <LinearProgress
-                              variant="determinate"
-                              value={Math.min(100, Math.max(0, (conn.rssi + 120) * 1.25))}
-                              sx={{ width: 60, height: 8, borderRadius: 1 }}
-                              color={conn.rssi >= -75 ? "success" : conn.rssi >= -95 ? "warning" : "error"}
-                            />
-                            <Typography variant="caption">{conn.rssi || "—"} dBm</Typography>
-                          </Box>
-                        </Tooltip>
+                      <TableCell sx={{ fontWeight: 600 }}>
+                        {radio["cellular-interface-name"] || radio["if-name"] || `Radio ${idx}`}
                       </TableCell>
                       <TableCell>
-                        {conn["rx-packets"]?.toLocaleString() || 0} / {conn["tx-packets"]?.toLocaleString() || 0}
+                        <Chip
+                          label={radio["Radio-Status"] || "—"}
+                          size="small"
+                          color={
+                            (radio["Radio-Status"] || "").toLowerCase().includes("online") ||
+                            (radio["Radio-Status"] || "").toLowerCase().includes("up")
+                              ? "success"
+                              : "warning"
+                          }
+                        />
                       </TableCell>
                       <TableCell>
-                        {formatBytes(conn["rx-bytes"])} / {formatBytes(conn["tx-bytes"])}
+                        <Chip label={radio["RAT-Selected"] || "—"} size="small" variant="outlined" />
                       </TableCell>
+                      <TableCell>
+                        {radio["LTE-Band"] ? `B${radio["LTE-Band"]}` : "—"}
+                        {radio["LTE-Bandwidth"] && ` (${radio["LTE-Bandwidth"]})`}
+                      </TableCell>
+                      <TableCell>{radio.RSSI || "—"}</TableCell>
+                      <TableCell>{radio.RSRP || "—"}</TableCell>
+                      <TableCell>{radio.RSRQ || "—"}</TableCell>
+                      <TableCell>{radio.SNR || "—"}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
