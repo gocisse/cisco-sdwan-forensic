@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useCallback } from "react";
 import {
   Box,
   Table,
@@ -14,8 +14,18 @@ import {
   InputAdornment,
   Typography,
   Chip,
+  Button,
+  Menu,
+  MenuItem,
+  ListItemIcon,
+  ListItemText,
 } from "@mui/material";
-import { Search as SearchIcon } from "@mui/icons-material";
+import {
+  Search as SearchIcon,
+  Download as DownloadIcon,
+  TableChart as CsvIcon,
+  Code as JsonIcon,
+} from "@mui/icons-material";
 
 export default function DataTable({
   columns,
@@ -31,12 +41,15 @@ export default function DataTable({
   maxHeight,
   renderCell,
   onRowClick,
+  exportFilename = "export",
+  showExport = true,
 }) {
   const [search, setSearch] = useState("");
   const [orderBy, setOrderBy] = useState(defaultSort || (columns[0] && columns[0].field));
   const [order, setOrder] = useState(defaultOrder);
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(pageSize);
+  const [exportAnchor, setExportAnchor] = useState(null);
 
   const filtered = useMemo(() => {
     if (!rows) return [];
@@ -75,6 +88,58 @@ export default function DataTable({
     setOrderBy(field);
   };
 
+  // Export to CSV
+  const exportToCsv = useCallback(() => {
+    const header = columns.map((c) => `"${c.label}"`).join(",");
+    const body = sorted
+      .map((row) =>
+        columns
+          .map((c) => {
+            const val = row[c.field];
+            if (val === null || val === undefined) return '""';
+            // Escape quotes and wrap in quotes
+            return `"${String(val).replace(/"/g, '""')}"`;
+          })
+          .join(",")
+      )
+      .join("\n");
+
+    const csv = header + "\n" + body;
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${exportFilename}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    setExportAnchor(null);
+  }, [columns, sorted, exportFilename]);
+
+  // Export to JSON
+  const exportToJson = useCallback(() => {
+    const data = sorted.map((row) => {
+      const obj = {};
+      columns.forEach((c) => {
+        obj[c.field] = row[c.field];
+      });
+      return obj;
+    });
+
+    const json = JSON.stringify(data, null, 2);
+    const blob = new Blob([json], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${exportFilename}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    setExportAnchor(null);
+  }, [columns, sorted, exportFilename]);
+
   return (
     <Paper variant="outlined" sx={{ overflow: "hidden" }}>
       <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", px: 2, py: 1.5, flexWrap: "wrap", gap: 1 }}>
@@ -84,20 +149,53 @@ export default function DataTable({
             <Chip label={filtered.length} size="small" sx={{ ml: 1, fontWeight: 600 }} />
           </Typography>
         )}
-        <TextField
-          size="small"
-          placeholder={searchPlaceholder}
-          value={search}
-          onChange={(e) => { setSearch(e.target.value); setPage(0); }}
-          sx={{ minWidth: 240 }}
-          InputProps={{
-            startAdornment: (
-              <InputAdornment position="start">
-                <SearchIcon fontSize="small" sx={{ color: "text.secondary" }} />
-              </InputAdornment>
-            ),
-          }}
-        />
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+          <TextField
+            size="small"
+            placeholder={searchPlaceholder}
+            value={search}
+            onChange={(e) => { setSearch(e.target.value); setPage(0); }}
+            sx={{ minWidth: 240 }}
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <SearchIcon fontSize="small" sx={{ color: "text.secondary" }} />
+                </InputAdornment>
+              ),
+            }}
+          />
+          {showExport && sorted.length > 0 && (
+            <>
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={<DownloadIcon />}
+                onClick={(e) => setExportAnchor(e.currentTarget)}
+                sx={{ whiteSpace: "nowrap" }}
+              >
+                Export
+              </Button>
+              <Menu
+                anchorEl={exportAnchor}
+                open={Boolean(exportAnchor)}
+                onClose={() => setExportAnchor(null)}
+              >
+                <MenuItem onClick={exportToCsv}>
+                  <ListItemIcon>
+                    <CsvIcon fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText>Export as CSV</ListItemText>
+                </MenuItem>
+                <MenuItem onClick={exportToJson}>
+                  <ListItemIcon>
+                    <JsonIcon fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText>Export as JSON</ListItemText>
+                </MenuItem>
+              </Menu>
+            </>
+          )}
+        </Box>
       </Box>
       <TableContainer sx={{ maxHeight: maxHeight || 600 }}>
         <Table size={dense ? "small" : "medium"} stickyHeader={stickyHeader}>

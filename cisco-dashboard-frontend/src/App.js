@@ -4,6 +4,7 @@ import { ThemeProvider, CssBaseline } from "@mui/material";
 import theme from "./theme";
 import { DeviceProvider } from "./context/DeviceContext";
 import Layout from "./components/Layout";
+import ErrorBoundary from "./components/ErrorBoundary";
 
 import Dashboard from "./pages/Dashboard";
 import DeviceDetail from "./pages/DeviceDetail";
@@ -31,7 +32,7 @@ import SSEInterfaceUsage from "./pages/SSEInterfaceUsage";
 import SSEInterfaceStats from "./pages/SSEInterfaceStats";
 import SSEAppRoute from "./pages/SSEAppRoute";
 
-import TopologyPage from "./pages/Topology";
+import TopologyPage from "./pages/Topology/index";
 import SiteTopology from "./pages/SiteTopology";
 
 import SlaPolicyList from "./pages/policy/SlaPolicyList";
@@ -65,9 +66,10 @@ export default function App() {
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
-      <Router>
-        <DeviceProvider>
-          <Routes>
+      <ErrorBoundary>
+        <Router>
+          <DeviceProvider>
+            <Routes>
             <Route element={<Layout />}>
               {/* Dashboard */}
               <Route path="/" element={<Dashboard />} />
@@ -133,11 +135,12 @@ export default function App() {
               <Route path="/sse/bfd" element={<SSEBfd />} />
               <Route path="/sse/interface-usage" element={<SSEInterfaceUsage />} />
               <Route path="/sse/interface-stats" element={<SSEInterfaceStats />} />
-              <Route path="/sse/app-route" element={<SSEAppRoute />} />
-            </Route>
-          </Routes>
-        </DeviceProvider>
-      </Router>
+                <Route path="/sse/app-route" element={<SSEAppRoute />} />
+              </Route>
+            </Routes>
+          </DeviceProvider>
+        </Router>
+      </ErrorBoundary>
     </ThemeProvider>
   );
 }
