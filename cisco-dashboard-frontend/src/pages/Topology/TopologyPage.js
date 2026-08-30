@@ -46,24 +46,22 @@ export default function TopologyPage() {
     showAllPeers
   );
 
-  // Build Control Plane elements
+  // Build Control Plane elements - only include devices with connections
   const controlElements = useMemo(() => {
     if (view !== "control") return [];
     const nodesMap = {};
     const edgesList = [];
+    const connectedDevices = new Set();
 
-    controllers.forEach((d) => {
-      nodesMap[d["system-ip"]] = makeNode(d, d["system-ip"]);
-    });
-    edgeDevices.forEach((d) => {
-      nodesMap[d["system-ip"]] = makeNode(d, d["system-ip"]);
-    });
-
+    // First pass: identify all devices that have connections
     const edgeIdSet = new Set();
     Object.entries(controlData).forEach(([ctrlIp, connections]) => {
+      connectedDevices.add(ctrlIp);
       (connections || []).forEach((conn) => {
         const peerIp = conn["system-ip"] || conn["peer-system-ip"] || conn["peer"];
-        if (!peerIp || !nodesMap[peerIp]) return;
+        if (!peerIp) return;
+        connectedDevices.add(peerIp);
+        
         const edgeKey = [ctrlIp, peerIp].sort().join("--");
         if (edgeIdSet.has(edgeKey)) return;
         edgeIdSet.add(edgeKey);
@@ -88,8 +86,31 @@ export default function TopologyPage() {
       });
     });
 
+    // Second pass: only add nodes for devices that have connections
+    // This prevents rendering thousands of disconnected nodes
+    controllers.forEach((d) => {
+      const ip = d["system-ip"];
+      if (connectedDevices.has(ip)) {
+        nodesMap[ip] = makeNode(d, ip);
+      }
+    });
+    edgeDevices.forEach((d) => {
+      const ip = d["system-ip"];
+      if (connectedDevices.has(ip)) {
+        nodesMap[ip] = makeNode(d, ip);
+      }
+    });
+
+    // For any connected device not in our device list, create a placeholder node
+    connectedDevices.forEach((ip) => {
+      if (!nodesMap[ip]) {
+        const dev = deviceMap[ip] || { "host-name": ip, "device-type": "unknown" };
+        nodesMap[ip] = makeNode(dev, ip);
+      }
+    });
+
     return [...Object.values(nodesMap), ...edgesList];
-  }, [view, controllers, edgeDevices, controlData]);
+  }, [view, controllers, edgeDevices, controlData, deviceMap]);
 
   // Build Data Plane elements
   const dataPlaneElements = useMemo(() => {

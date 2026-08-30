@@ -129,7 +129,7 @@ func registerAPIRoutes(r *mux.Router, apiClient *utils.APIClient) {
 		device.FetchWithUUID(apiClient, "dataservice/device/ipsec/localsa")).Methods("GET")
 
 	// ─── Cellular / LTE ─────────────────────────────────────────────────
-	// Aggregated status (hierarchical: connection first, then details if connected)
+	// Aggregated status (checks multiple sources: radio, connection, interfaces)
 	r.HandleFunc("/api/cellular/{system-ip}",
 		device.FetchCellularStatus(apiClient)).Methods("GET")
 	// Individual endpoints for granular access
@@ -139,6 +139,8 @@ func registerAPIRoutes(r *mux.Router, apiClient *utils.APIClient) {
 		device.FetchCellularSession(apiClient)).Methods("GET")
 	r.HandleFunc("/api/cellular/hardware/{system-ip}",
 		device.FetchCellularHardware(apiClient)).Methods("GET")
+	r.HandleFunc("/api/cellular/radio/{system-ip}",
+		device.FetchCellularRadio(apiClient)).Methods("GET")
 	r.HandleFunc("/api/cellular/transport/{system-ip}",
 		device.FetchCellularTransport(apiClient)).Methods("GET")
 
