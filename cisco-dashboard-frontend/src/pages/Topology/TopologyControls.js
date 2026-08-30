@@ -1,5 +1,6 @@
 /**
  * Topology control panel component
+ * Only Data Plane and OMP Route views (no Control Plane)
  */
 
 import React from "react";
@@ -17,7 +18,6 @@ import {
   ZoomOut as ZoomOutIcon,
   CenterFocusStrong as FitIcon,
   Fullscreen as FullscreenIcon,
-  AccountTree as ControlIcon,
   Hub as BfdIcon,
   Route as RouteIcon,
 } from "@mui/icons-material";
@@ -46,37 +46,32 @@ export default function TopologyControls({
         gap: 1,
       }}
     >
-      {/* View Toggle */}
+      {/* View Toggle - Only Data Plane and OMP */}
       <ToggleButtonGroup
         value={view}
         exclusive
         onChange={(_, v) => v && onViewChange(v)}
         size="small"
       >
-        <ToggleButton value="control">
-          <Tooltip title="Control Plane (All Controllers)">
-            <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-              <ControlIcon fontSize="small" />
-              Control
-            </Box>
-          </Tooltip>
-        </ToggleButton>
-        <ToggleButton value="dataplane" disabled={!activeIp}>
-          <Tooltip title="Data Plane (BFD Tunnels)">
+        <ToggleButton value="dataplane">
+          <Tooltip title="Data Plane - BFD Tunnels & Connections">
             <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
               <BfdIcon fontSize="small" />
               Data Plane
               {peerCount > 0 && view === "dataplane" && (
-                <Chip label={peerCount} size="small" sx={{ ml: 0.5, height: 18 }} />
+                <Chip label={peerCount} size="small" color="primary" sx={{ ml: 0.5, height: 18 }} />
               )}
             </Box>
           </Tooltip>
         </ToggleButton>
-        <ToggleButton value="omp" disabled={!activeIp}>
-          <Tooltip title="OMP Routing Topology">
+        <ToggleButton value="omp">
+          <Tooltip title="OMP Routing - Routes by Peer">
             <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
               <RouteIcon fontSize="small" />
               OMP Routes
+              {peerCount > 0 && view === "omp" && (
+                <Chip label={peerCount} size="small" color="secondary" sx={{ ml: 0.5, height: 18 }} />
+              )}
             </Box>
           </Tooltip>
         </ToggleButton>
@@ -87,6 +82,16 @@ export default function TopologyControls({
         <Button size="small" variant="outlined" onClick={onToggleShowAll}>
           {showAllPeers ? "Show Less" : `Show All (+${hiddenCount})`}
         </Button>
+      )}
+
+      {/* Selected Device Indicator */}
+      {activeIp && (
+        <Chip 
+          label={`Device: ${activeIp}`} 
+          size="small" 
+          variant="outlined"
+          sx={{ display: { xs: 'none', sm: 'flex' } }}
+        />
       )}
 
       {/* Zoom Controls */}

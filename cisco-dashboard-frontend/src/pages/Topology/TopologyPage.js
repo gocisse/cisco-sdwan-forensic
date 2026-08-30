@@ -1,6 +1,6 @@
 /**
  * Main Topology Page Component
- * Refactored from the original monolithic Topology.js
+ * Shows Data Plane (BFD) and OMP Route topology for a selected device
  */
 
 import React, { useState, useMemo, useEffect, useRef, useCallback } from "react";
@@ -10,7 +10,7 @@ import dagre from "cytoscape-dagre";
 
 import { useDeviceContext } from "../../context/DeviceContext";
 import { CY_STYLE } from "./constants";
-import { makeNode, buildDeviceMap, separateDevices } from "./utils";
+import { makeNode, buildDeviceMap } from "./utils";
 import { useTopologyData } from "./useTopologyData";
 import TopologyControls from "./TopologyControls";
 import NodeTooltip from "./NodeTooltip";
@@ -24,7 +24,8 @@ if (!cytoscape._dagreRegistered) {
 
 export default function TopologyPage() {
   const { selectedDevice, devices, selectDeviceByIp } = useDeviceContext();
-  const [view, setView] = useState("control");
+  // Default to dataplane view (no more control plane)
+  const [view, setView] = useState("dataplane");
   const [showAllPeers, setShowAllPeers] = useState(false);
   const [selectedEdgeInfo, setSelectedEdgeInfo] = useState(null);
   // eslint-disable-next-line no-unused-vars
@@ -36,81 +37,13 @@ export default function TopologyPage() {
   const activeIp = selectedDevice ? selectedDevice["system-ip"] : null;
 
   const deviceMap = useMemo(() => buildDeviceMap(devices), [devices]);
-  const { controllers, edgeDevices } = useMemo(() => separateDevices(devices), [devices]);
 
-  // Use the custom hook for data fetching
-  const { loading, error, controlData, logicalData, ompData } = useTopologyData(
+  // Use the custom hook for data fetching (only dataplane and omp now)
+  const { loading, error, logicalData, ompData } = useTopologyData(
     view,
     activeIp,
-    controllers,
     showAllPeers
   );
-
-  // Build Control Plane elements - only include devices with connections
-  const controlElements = useMemo(() => {
-    if (view !== "control") return [];
-    const nodesMap = {};
-    const edgesList = [];
-    const connectedDevices = new Set();
-
-    // First pass: identify all devices that have connections
-    const edgeIdSet = new Set();
-    Object.entries(controlData).forEach(([ctrlIp, connections]) => {
-      connectedDevices.add(ctrlIp);
-      (connections || []).forEach((conn) => {
-        const peerIp = conn["system-ip"] || conn["peer-system-ip"] || conn["peer"];
-        if (!peerIp) return;
-        connectedDevices.add(peerIp);
-        
-        const edgeKey = [ctrlIp, peerIp].sort().join("--");
-        if (edgeIdSet.has(edgeKey)) return;
-        edgeIdSet.add(edgeKey);
-
-        const state = (conn["state"] || conn["peer-state"] || "").toLowerCase();
-        const classes = ["control"];
-        if (state === "down" || state === "connect" || state === "invalid") {
-          classes.push("down");
-        }
-
-        edgesList.push({
-          data: {
-            id: `ctrl-${edgeKey}`,
-            source: ctrlIp,
-            target: peerIp,
-            color: state.includes("up") || state === "operational" ? "#448AFF" : "#FF1744",
-            transport: "control",
-            state: conn["state"] || conn["peer-state"] || "N/A",
-          },
-          classes: classes.join(" "),
-        });
-      });
-    });
-
-    // Second pass: only add nodes for devices that have connections
-    // This prevents rendering thousands of disconnected nodes
-    controllers.forEach((d) => {
-      const ip = d["system-ip"];
-      if (connectedDevices.has(ip)) {
-        nodesMap[ip] = makeNode(d, ip);
-      }
-    });
-    edgeDevices.forEach((d) => {
-      const ip = d["system-ip"];
-      if (connectedDevices.has(ip)) {
-        nodesMap[ip] = makeNode(d, ip);
-      }
-    });
-
-    // For any connected device not in our device list, create a placeholder node
-    connectedDevices.forEach((ip) => {
-      if (!nodesMap[ip]) {
-        const dev = deviceMap[ip] || { "host-name": ip, "device-type": "unknown" };
-        nodesMap[ip] = makeNode(dev, ip);
-      }
-    });
-
-    return [...Object.values(nodesMap), ...edgesList];
-  }, [view, controllers, edgeDevices, controlData, deviceMap]);
 
   // Build Data Plane elements
   const dataPlaneElements = useMemo(() => {
@@ -215,56 +148,44 @@ export default function TopologyPage() {
     return [...Object.values(nodesMap), ...edgesList];
   }, [view, ompData, activeIp, deviceMap]);
 
-  const elements = view === "control" ? controlElements : view === "omp" ? ompElements : dataPlaneElements;
+  // Select elements based on view
+  const elements = view === "omp" ? ompElements : dataPlaneElements;
 
   // Peer count for badge
   const peerCount = useMemo(() => {
     if (view === "omp" && ompData) return ompData.totalPeers || 0;
-    if (view !== "dataplane" || !logicalData) return 0;
-    return logicalData.totalPeers || 0;
+    if (view === "dataplane" && logicalData) return logicalData.totalPeers || 0;
+    return 0;
   }, [view, logicalData, ompData]);
 
   const hiddenCount = useMemo(() => {
-    if (view !== "dataplane" || !logicalData) return 0;
-    return logicalData.hiddenCount || 0;
+    if (view === "dataplane" && logicalData) return logicalData.hiddenCount || 0;
+    return 0;
   }, [view, logicalData]);
 
   // Initialize Cytoscape
   useEffect(() => {
-    if (!containerRef.current || !elements.length) {
-      if (cyRef.current) {
-        cyRef.current.destroy();
-        cyRef.current = null;
-      }
-      return;
-    }
+    // Clean up previous instance
     if (cyRef.current) {
       cyRef.current.destroy();
       cyRef.current = null;
     }
 
-    const layoutConfig =
-      view === "control"
-        ? {
-            name: "dagre",
-            rankDir: "TB",
-            rankSep: 100,
-            nodeSep: 40,
-            edgeSep: 15,
-            padding: 30,
-            animate: true,
-            animationDuration: 500,
-            sort: (a, b) => (a.hasClass("control") ? 0 : 1) - (b.hasClass("control") ? 0 : 1),
-          }
-        : {
-            name: "concentric",
-            concentric: (node) => (node.hasClass("center") ? 10 : 1),
-            levelWidth: () => 1,
-            minNodeSpacing: 80,
-            padding: 60,
-            animate: true,
-            animationDuration: 500,
-          };
+    // Don't create if no container or no elements
+    if (!containerRef.current || !elements.length) {
+      return;
+    }
+
+    // Use concentric layout for device-centric views
+    const layoutConfig = {
+      name: "concentric",
+      concentric: (node) => (node.hasClass("center") ? 10 : 1),
+      levelWidth: () => 1,
+      minNodeSpacing: 80,
+      padding: 60,
+      animate: true,
+      animationDuration: 500,
+    };
 
     const cy = cytoscape({
       container: containerRef.current,
@@ -309,7 +230,6 @@ export default function TopologyPage() {
 
     // Tap edge: show relationship details
     cy.on("tap", "edge", (evt) => {
-      if (view !== "dataplane" && view !== "omp") return;
       const edge = evt.target;
       const ed = edge.data();
       cy.elements().removeClass("highlighted dimmed selected-node selected-edge");
@@ -323,13 +243,12 @@ export default function TopologyPage() {
       setTooltip(null);
     });
 
-    // Double-tap in View A → switch to Data Plane for that device
+    // Double-tap node: switch to that device's topology
     cy.on("dbltap", "node", (evt) => {
       const node = evt.target;
       const nd = node.data();
-      if (nd.systemIp) {
+      if (nd.systemIp && nd.systemIp !== activeIp) {
         selectDeviceByIp(nd.systemIp);
-        setView("dataplane");
       }
     });
 
@@ -351,7 +270,7 @@ export default function TopologyPage() {
         cyRef.current = null;
       }
     };
-  }, [elements, view, logicalData, selectDeviceByIp]);
+  }, [elements, view, logicalData, activeIp, selectDeviceByIp]);
 
   // Zoom controls
   const handleZoomIn = useCallback(() => {
@@ -375,6 +294,20 @@ export default function TopologyPage() {
       }
     }
   }, []);
+
+  // Show message if no device selected
+  if (!activeIp) {
+    return (
+      <Box>
+        <Typography variant="h5" gutterBottom>
+          Network Topology
+        </Typography>
+        <Alert severity="info" sx={{ mt: 2 }}>
+          Please select a device from the sidebar to view its topology.
+        </Alert>
+      </Box>
+    );
+  }
 
   return (
     <Box>
