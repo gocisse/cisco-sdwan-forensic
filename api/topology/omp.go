@@ -129,15 +129,13 @@ func FetchOmpTopology(apiClient *utils.APIClient) http.HandlerFunc {
 				peerType := "edge"
 				siteID := route.SiteID
 
-				if dev, ok := deviceMap[peerIP]; ok {
+				if dev, ok := deviceMap[peerIP]; ok && dev != nil {
 					if dev.HostName != "" {
 						peerHostname = dev.HostName
 					}
-					peerType = classifyDeviceType(dev)
+					peerType = dev.RoleType()
 					if siteID == "" {
-						if sid, ok := dev.SiteID.(string); ok {
-							siteID = sid
-						}
+						siteID = dev.SiteID
 					}
 				}
 

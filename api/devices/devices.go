@@ -3,10 +3,10 @@ package devices
 import (
 	"encoding/json"
 	"net/http"
+
+	"sdwan-app/middleware"
 	"sdwan-app/utils"
 )
-
-
 
 type Device struct {
 	DeviceID            string   `json:"deviceId"`
@@ -35,7 +35,7 @@ func FetchDevices(apiClient *utils.APIClient) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		data, err := apiClient.Get("dataservice/device")
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			middleware.WriteError(w, http.StatusBadGateway, "VMANAGE_ERROR", "Failed to fetch devices from vManage")
 			return
 		}
 
@@ -44,11 +44,10 @@ func FetchDevices(apiClient *utils.APIClient) http.HandlerFunc {
 		}
 
 		if err := json.Unmarshal(data, &response); err != nil {
-			http.Error(w, "Failed to parse response", http.StatusInternalServerError)
+			middleware.WriteError(w, http.StatusInternalServerError, "PARSE_ERROR", "Failed to parse device response")
 			return
 		}
 
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(response.Data)
+		middleware.RespondJSON(w, http.StatusOK, response.Data)
 	}
 }

@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"sync"
 
-	"sdwan-app/middleware"
 	"sdwan-app/utils"
 
 	"github.com/gorilla/mux"
@@ -126,22 +125,9 @@ func FetchCellularTransport(apiClient *utils.APIClient) http.HandlerFunc {
 func FetchCellularStatus(apiClient *utils.APIClient) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		systemIP := mux.Vars(r)["system-ip"]
-		if systemIP == "" {
-			middleware.WriteError(w, http.StatusBadRequest, "MISSING_PARAM", "Missing 'system-ip' path parameter")
-			return
-		}
-
-		// Verify device exists
-		dev, err := findDevice(apiClient, systemIP)
-		if err != nil {
-			log.Printf("Device lookup error: %v", err)
-			middleware.WriteError(w, http.StatusBadGateway, "VMANAGE_ERROR", "Failed to look up device")
-			return
-		}
+		dev := requireDevice(apiClient, w, systemIP)
 		if dev == nil {
-			middleware.WriteError(w, http.StatusNotFound, "NOT_FOUND",
-				fmt.Sprintf("No device found with system-ip %s", systemIP))
-			return
+			return // Error already written
 		}
 
 		// Use system-ip as deviceId (vManage expects IP, not UUID)

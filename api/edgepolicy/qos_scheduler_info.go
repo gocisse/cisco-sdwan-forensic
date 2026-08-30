@@ -1,9 +1,12 @@
+// qos_scheduler_info.go
 package edgepolicy
 
 import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+
+	"sdwan-app/middleware"
 	"sdwan-app/utils"
 
 	"github.com/gorilla/mux"
@@ -24,35 +27,28 @@ type QosSchedulerInfo struct {
 // FetchQosSchedulerInfo fetches from /dataservice/device/policy/qosschedulerinfo?deviceId={system-ip}
 func FetchQosSchedulerInfo(apiClient *utils.APIClient) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// Extract system-ip from URL path parameters.
-		vars := mux.Vars(r)
-		deviceID := vars["system-ip"]
-		if deviceID == "" {
-			http.Error(w, "Missing 'system-ip' URL parameter", http.StatusBadRequest)
+		systemIP := mux.Vars(r)["system-ip"]
+		if systemIP == "" {
+			middleware.WriteError(w, http.StatusBadRequest, "MISSING_PARAM", "Missing 'system-ip' path parameter")
 			return
 		}
 
-		// Build the vManage endpoint.
-		endpoint := fmt.Sprintf("dataservice/device/policy/qosschedulerinfo?deviceId=%s", deviceID)
+		endpoint := fmt.Sprintf("dataservice/device/policy/qosschedulerinfo?deviceId=%s", systemIP)
 
-		// Fetch data via APIClient.
 		data, err := apiClient.Get(endpoint)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			middleware.WriteError(w, http.StatusBadGateway, "VMANAGE_ERROR", "Failed to fetch QoS scheduler info from vManage")
 			return
 		}
 
-		// Unmarshal into a "data" wrapper.
 		var response struct {
 			Data []QosSchedulerInfo `json:"data"`
 		}
 		if err := json.Unmarshal(data, &response); err != nil {
-			http.Error(w, "Failed to parse QoS Scheduler info from vManage", http.StatusInternalServerError)
+			middleware.WriteError(w, http.StatusInternalServerError, "PARSE_ERROR", "Failed to parse QoS scheduler info response")
 			return
 		}
 
-		// Return JSON array.
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(response.Data)
+		middleware.RespondJSON(w, http.StatusOK, response.Data)
 	}
 }

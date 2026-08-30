@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+
+	"sdwan-app/middleware"
 	"sdwan-app/utils"
 
 	"github.com/gorilla/mux"
@@ -26,35 +28,28 @@ type AccessListCounters struct {
 // FetchAccessListCounters retrieves the access-list counters for a given system IP.
 func FetchAccessListCounters(apiClient *utils.APIClient) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// Extract the system-ip from the URL path parameters
-		vars := mux.Vars(r)
-		deviceID := vars["system-ip"]
-		if deviceID == "" {
-			http.Error(w, "Missing 'system-ip' URL parameter", http.StatusBadRequest)
+		systemIP := mux.Vars(r)["system-ip"]
+		if systemIP == "" {
+			middleware.WriteError(w, http.StatusBadRequest, "MISSING_PARAM", "Missing 'system-ip' path parameter")
 			return
 		}
 
-		// Build the endpoint
-		endpoint := fmt.Sprintf("dataservice/device/policy/accesslistcounters?deviceId=%s", deviceID)
+		endpoint := fmt.Sprintf("dataservice/device/policy/accesslistcounters?deviceId=%s", systemIP)
 
-		// Fetch data from vManage
 		data, err := apiClient.Get(endpoint)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			middleware.WriteError(w, http.StatusBadGateway, "VMANAGE_ERROR", "Failed to fetch access list counters from vManage")
 			return
 		}
 
-		// Unmarshal into a struct with a "data" field
 		var response struct {
 			Data []AccessListCounters `json:"data"`
 		}
 		if err := json.Unmarshal(data, &response); err != nil {
-			http.Error(w, "Failed to parse Access List Counters response", http.StatusInternalServerError)
+			middleware.WriteError(w, http.StatusInternalServerError, "PARSE_ERROR", "Failed to parse access list counters response")
 			return
 		}
 
-		// Return the array in JSON format
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(response.Data)
+		middleware.RespondJSON(w, http.StatusOK, response.Data)
 	}
 }

@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"sdwan-app/middleware"
+	"sdwan-app/models"
 	"sdwan-app/utils"
 
 	"github.com/gorilla/mux"
@@ -130,15 +131,8 @@ type rawSiteLink struct {
 	LinkKeyDisplay string `json:"linkKeyDisplay"`
 }
 
-// deviceRecord for looking up device info
-type deviceRecord struct {
-	SystemIP    string      `json:"system-ip"`
-	HostName    string      `json:"host-name"`
-	DeviceType  string      `json:"device-type"`
-	Personality string      `json:"personality"`
-	SiteID      interface{} `json:"site-id"`
-	Model       string      `json:"device-model"`
-}
+// deviceRecord is kept for backward compatibility but we now use models.Device
+// via the cached apiClient.GetDevices() method.
 
 // FetchLogicalTopology aggregates BFD, control, and site topology into unified relationships
 // GET /api/topology/logical/{system-ip}?showAll=true
@@ -155,12 +149,12 @@ func FetchLogicalTopology(apiClient *utils.APIClient) http.HandlerFunc {
 		// Check if user wants all peers
 		showAll := r.URL.Query().Get("showAll") == "true"
 
-		// Get device list for hostname/type lookups
+		// Get device list for hostname/type lookups (uses cache)
 		deviceMap := buildDeviceMap(apiClient)
 
 		// Get selected device info
 		selectedHostname := systemIP
-		if dev, ok := deviceMap[systemIP]; ok {
+		if dev, ok := deviceMap[systemIP]; ok && dev != nil {
 			selectedHostname = dev.HostName
 		}
 
@@ -242,7 +236,7 @@ func FetchLogicalTopology(apiClient *utils.APIClient) http.HandlerFunc {
 }
 
 // fetchBFDRelationships fetches BFD sessions and adds them to the unified peer map
-func fetchBFDRelationships(apiClient *utils.APIClient, systemIP string, deviceMap map[string]deviceRecord, unifiedPeers map[string]*Relationship) {
+func fetchBFDRelationships(apiClient *utils.APIClient, systemIP string, deviceMap map[string]*models.Device, unifiedPeers map[string]*Relationship) {
 	endpoint := "dataservice/device/bfd/sessions?deviceId=" + systemIP
 	rawData, err := apiClient.Get(endpoint)
 	if err != nil {
@@ -302,7 +296,7 @@ func fetchBFDRelationships(apiClient *utils.APIClient, systemIP string, deviceMa
 }
 
 // fetchControlRelationships fetches control connections and adds them to the unified peer map
-func fetchControlRelationships(apiClient *utils.APIClient, systemIP string, deviceMap map[string]deviceRecord, unifiedPeers map[string]*Relationship) {
+func fetchControlRelationships(apiClient *utils.APIClient, systemIP string, deviceMap map[string]*models.Device, unifiedPeers map[string]*Relationship) {
 	endpoint := "dataservice/device/control/connections?deviceId=" + systemIP
 	rawData, err := apiClient.Get(endpoint)
 	if err != nil {
@@ -344,7 +338,7 @@ func fetchControlRelationships(apiClient *utils.APIClient, systemIP string, devi
 }
 
 // fetchSiteRelationships fetches site topology and adds links to the unified peer map
-func fetchSiteRelationships(apiClient *utils.APIClient, systemIP string, deviceMap map[string]deviceRecord, unifiedPeers map[string]*Relationship) {
+func fetchSiteRelationships(apiClient *utils.APIClient, systemIP string, deviceMap map[string]*models.Device, unifiedPeers map[string]*Relationship) {
 	endpoint := "dataservice/topology/device?deviceId=" + systemIP
 	rawData, err := apiClient.Get(endpoint)
 	if err != nil {
@@ -393,7 +387,7 @@ func fetchSiteRelationships(apiClient *utils.APIClient, systemIP string, deviceM
 }
 
 // getOrCreateRelationship gets existing or creates new relationship in the unified map
-func getOrCreateRelationship(unifiedPeers map[string]*Relationship, peerIP string, deviceMap map[string]deviceRecord) *Relationship {
+func getOrCreateRelationship(unifiedPeers map[string]*Relationship, peerIP string, deviceMap map[string]*models.Device) *Relationship {
 	if rel, exists := unifiedPeers[peerIP]; exists {
 		return rel
 	}
@@ -403,11 +397,11 @@ func getOrCreateRelationship(unifiedPeers map[string]*Relationship, peerIP strin
 	peerType := "edge"
 	var siteID interface{} = "N/A"
 
-	if dev, ok := deviceMap[peerIP]; ok {
+	if dev, ok := deviceMap[peerIP]; ok && dev != nil {
 		if dev.HostName != "" {
 			peerHostname = dev.HostName
 		}
-		peerType = classifyDeviceType(dev)
+		peerType = dev.RoleType()
 		siteID = dev.SiteID
 	}
 
@@ -554,64 +548,23 @@ func hasRelType(types []RelationshipType, target RelationshipType) bool {
 	return false
 }
 
-// buildDeviceMap fetches all devices and creates a lookup map
-func buildDeviceMap(apiClient *utils.APIClient) map[string]deviceRecord {
-	deviceMap := make(map[string]deviceRecord)
+// buildDeviceMap fetches all devices and creates a lookup map using cached device list.
+func buildDeviceMap(apiClient *utils.APIClient) map[string]*models.Device {
+	deviceMap := make(map[string]*models.Device)
 
-	rawData, err := apiClient.Get("dataservice/device")
+	devices, err := apiClient.GetDevices()
 	if err != nil {
 		log.Printf("Device list fetch error: %v", err)
 		return deviceMap
 	}
 
-	var envelope struct {
-		Data []deviceRecord `json:"data"`
-	}
-	if err := json.Unmarshal(rawData, &envelope); err != nil {
-		log.Printf("Device list parse error: %v", err)
-		return deviceMap
-	}
-
-	for _, dev := range envelope.Data {
-		if dev.SystemIP != "" {
-			deviceMap[dev.SystemIP] = dev
+	for i := range devices {
+		if devices[i].SystemIP != "" {
+			deviceMap[devices[i].SystemIP] = &devices[i]
 		}
 	}
 
 	return deviceMap
 }
 
-// classifyDeviceType determines the device role
-func classifyDeviceType(dev deviceRecord) string {
-	dt := strings.ToLower(dev.DeviceType + " " + dev.Personality)
-
-	if strings.Contains(dt, "vmanage") {
-		return "vmanage"
-	}
-	if strings.Contains(dt, "vsmart") {
-		return "vsmart"
-	}
-	if strings.Contains(dt, "vbond") {
-		return "vbond"
-	}
-
-	// Check model for hub/DC indicators
-	model := strings.ToLower(dev.Model)
-	if strings.Contains(model, "hub") {
-		return "hub"
-	}
-	if strings.Contains(model, "dc") || strings.Contains(model, "datacenter") {
-		return "datacenter"
-	}
-
-	// Check for cEdge vs vEdge
-	if strings.Contains(dt, "cedge") || strings.Contains(model, "c8") ||
-		strings.Contains(model, "isr") || strings.Contains(model, "asr") {
-		return "cedge"
-	}
-	if strings.Contains(dt, "vedge") {
-		return "vedge"
-	}
-
-	return "edge"
-}
+// classifyDeviceType is deprecated - use models.Device.RoleType() instead

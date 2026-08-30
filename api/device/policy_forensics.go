@@ -213,30 +213,14 @@ type CentralPolicyResponse struct {
 func FetchLocalPolicy(apiClient *utils.APIClient) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		systemIP := mux.Vars(r)["system-ip"]
-		if systemIP == "" {
-			middleware.WriteError(w, http.StatusBadRequest, "MISSING_PARAM", "Missing 'system-ip' path parameter")
-			return
-		}
-
-		// Look up device for hostname / site-id context
-		dev, err := findDevice(apiClient, systemIP)
-		if err != nil {
-			log.Printf("Device lookup error: %v", err)
-			middleware.WriteError(w, http.StatusBadGateway, "VMANAGE_ERROR", "Failed to look up device")
-			return
-		}
+		dev := requireDevice(apiClient, w, systemIP)
 		if dev == nil {
-			middleware.WriteError(w, http.StatusNotFound, "NOT_FOUND",
-				fmt.Sprintf("No device found with system-ip %s", systemIP))
-			return
+			return // Error already written
 		}
 
-		// Resolve device UUID for vManage API calls
-		deviceID := dev.UUID
-		if deviceID == "" {
-			deviceID = systemIP
-		}
-		log.Printf("📡 Local policy: system-ip=%s → deviceId=%s", systemIP, deviceID)
+		// Use system-ip as deviceId for vManage API calls
+		deviceID := systemIP
+		log.Printf("Local policy: system-ip=%s", systemIP)
 
 		// Fetch ACLs
 		acls := fetchLocalPolicyItems(apiClient, deviceID, "dataservice/device/policy/accesslistnames",
@@ -391,26 +375,13 @@ func fetchLocalPolicyItems(
 func FetchCentralizedPolicy(apiClient *utils.APIClient) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		systemIP := mux.Vars(r)["system-ip"]
-		if systemIP == "" {
-			middleware.WriteError(w, http.StatusBadRequest, "MISSING_PARAM", "Missing 'system-ip' path parameter")
-			return
-		}
-
-		// Step 1: Find device → get site-id
-		dev, err := findDevice(apiClient, systemIP)
-		if err != nil {
-			log.Printf("Device lookup error: %v", err)
-			middleware.WriteError(w, http.StatusBadGateway, "VMANAGE_ERROR", "Failed to look up device")
-			return
-		}
+		dev := requireDevice(apiClient, w, systemIP)
 		if dev == nil {
-			middleware.WriteError(w, http.StatusNotFound, "NOT_FOUND",
-				fmt.Sprintf("No device found with system-ip %s", systemIP))
-			return
+			return // Error already written
 		}
 
 		siteID := dev.SiteID
-		log.Printf("\U0001f50d Centralized policy lookup for device %s, site-id=%s", systemIP, siteID)
+		log.Printf("Centralized policy lookup for device %s, site-id=%s", systemIP, siteID)
 
 		// Step 2: Fetch all vSmart policies
 		rawPolicies, err := apiClient.Get("dataservice/template/policy/vsmart")

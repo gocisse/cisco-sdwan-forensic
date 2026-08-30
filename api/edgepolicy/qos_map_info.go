@@ -1,9 +1,12 @@
+// qos_map_info.go
 package edgepolicy
 
 import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+
+	"sdwan-app/middleware"
 	"sdwan-app/utils"
 
 	"github.com/gorilla/mux"
@@ -21,83 +24,28 @@ type QosMapInfo struct {
 // FetchQosMapInfo fetches from /dataservice/device/policy/qosmapinfo?deviceId=...
 func FetchQosMapInfo(apiClient *utils.APIClient) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// Extract system-ip from URL path parameters.
-		vars := mux.Vars(r)
-		deviceID := vars["system-ip"]
-		if deviceID == "" {
-			http.Error(w, "Missing 'system-ip' URL parameter", http.StatusBadRequest)
+		systemIP := mux.Vars(r)["system-ip"]
+		if systemIP == "" {
+			middleware.WriteError(w, http.StatusBadRequest, "MISSING_PARAM", "Missing 'system-ip' path parameter")
 			return
 		}
 
-		// Build the vManage endpoint.
-		endpoint := fmt.Sprintf("dataservice/device/policy/qosmapinfo?deviceId=%s", deviceID)
+		endpoint := fmt.Sprintf("dataservice/device/policy/qosmapinfo?deviceId=%s", systemIP)
 
-		// Fetch data via APIClient.
 		data, err := apiClient.Get(endpoint)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			middleware.WriteError(w, http.StatusBadGateway, "VMANAGE_ERROR", "Failed to fetch QoS map info from vManage")
 			return
 		}
 
-		// Unmarshal into a "data" wrapper.
 		var response struct {
 			Data []QosMapInfo `json:"data"`
 		}
 		if err := json.Unmarshal(data, &response); err != nil {
-			http.Error(w, "Failed to parse QoS map info response", http.StatusInternalServerError)
+			middleware.WriteError(w, http.StatusInternalServerError, "PARSE_ERROR", "Failed to parse QoS map info response")
 			return
 		}
 
-		// Return JSON array.
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(response.Data)
+		middleware.RespondJSON(w, http.StatusOK, response.Data)
 	}
 }
-
-// package edgepolicy
-
-// import (
-// 	"encoding/json"
-// 	"fmt"
-// 	"net/http"
-// 	"sdwan-app/utils"
-// )
-
-// // QosMapInfo corresponds to /dataservice/device/policy/qosmapinfo?deviceId=system-ip
-// type QosMapInfo struct {
-// 	Lastupdated     int64  `json:"lastupdated"`
-// 	VdeviceDataKey  string `json:"vdevice-dataKey"`
-// 	VdeviceName     string `json:"vdevice-name"`
-// 	QosMapName      string `json:"qos-map-name"`
-// 	VdeviceHostName string `json:"vdevice-host-name"`
-// }
-
-// // FetchQosMapInfo fetches from /dataservice/device/policy/qosmapinfo?deviceId=...
-// func FetchQosMapInfo(apiClient *utils.APIClient) http.HandlerFunc {
-// 	return func(w http.ResponseWriter, r *http.Request) {
-// 		deviceID := r.URL.Query().Get("system-ip")
-// 		if deviceID == "" {
-// 			http.Error(w, "Missing 'system-ip' query param", http.StatusBadRequest)
-// 			return
-// 		}
-
-// 		endpoint := fmt.Sprintf("dataservice/device/policy/qosmapinfo?deviceId=%s", deviceID)
-
-// 		data, err := apiClient.Get(endpoint)
-// 		if err != nil {
-// 			http.Error(w, err.Error(), http.StatusInternalServerError)
-// 			return
-// 		}
-
-// 		var response struct {
-// 			Data []QosMapInfo `json:"data"`
-// 		}
-// 		if err := json.Unmarshal(data, &response); err != nil {
-// 			http.Error(w, "Failed to parse QoS map info response", http.StatusInternalServerError)
-// 			return
-// 		}
-
-// 		w.Header().Set("Content-Type", "application/json")
-// 		json.NewEncoder(w).Encode(response.Data)
-// 	}
-// }

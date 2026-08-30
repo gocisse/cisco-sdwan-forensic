@@ -3,6 +3,8 @@ package realtime
 import (
 	"encoding/json"
 	"net/http"
+
+	"sdwan-app/middleware"
 	"sdwan-app/utils"
 
 	"github.com/gorilla/mux"
@@ -36,37 +38,27 @@ type AdvTlocs struct {
 // FetchAdvertisedTlocs retrieves and filters advertised TLOCs for a device.
 func FetchAdvertisedTlocs(apiClient *utils.APIClient) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		params := mux.Vars(r)
-		systemIP := params["system-ip"]
-
-		// Fetch raw JSON data from the API.
-		rawData, err := apiClient.Get("dataservice/device/omp/tlocs/advertised?deviceId=" + systemIP)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+		systemIP := mux.Vars(r)["system-ip"]
+		if systemIP == "" {
+			middleware.WriteError(w, http.StatusBadRequest, "MISSING_PARAM", "Missing 'system-ip' path parameter")
 			return
 		}
 
-		// Assume the API response is wrapped inside a "data" field:
-		// { "data": [ {...}, {...} ] }
+		rawData, err := apiClient.Get("dataservice/device/omp/tlocs/advertised?deviceId=" + systemIP)
+		if err != nil {
+			middleware.WriteError(w, http.StatusBadGateway, "VMANAGE_ERROR", "Failed to fetch advertised TLOCs from vManage")
+			return
+		}
+
 		var response struct {
 			Data []AdvTlocs `json:"data"`
 		}
 
-		// Unmarshal the raw JSON response into the AdvTlocs struct.
 		if err := json.Unmarshal(rawData, &response); err != nil {
-			http.Error(w, "Failed to parse JSON response", http.StatusInternalServerError)
+			middleware.WriteError(w, http.StatusInternalServerError, "PARSE_ERROR", "Failed to parse TLOCs response")
 			return
 		}
 
-		// Re-marshal the filtered data (only the AdvTlocs slice) into JSON.
-		filteredData, err := json.Marshal(response.Data)
-		if err != nil {
-			http.Error(w, "Failed to convert filtered data to JSON", http.StatusInternalServerError)
-			return
-		}
-
-		// Set the Content-Type header and write the JSON response.
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(filteredData)
+		middleware.RespondJSON(w, http.StatusOK, response.Data)
 	}
 }

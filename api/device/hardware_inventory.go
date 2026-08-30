@@ -6,7 +6,6 @@ import (
 	"log"
 	"net/http"
 
-	"sdwan-app/middleware"
 	"sdwan-app/utils"
 
 	"github.com/gorilla/mux"
@@ -45,22 +44,9 @@ type HardwareDeviceInfo struct {
 func FetchHardwareInventory(apiClient *utils.APIClient) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		systemIP := mux.Vars(r)["system-ip"]
-		if systemIP == "" {
-			middleware.WriteError(w, http.StatusBadRequest, "MISSING_PARAM", "Missing 'system-ip' path parameter")
-			return
-		}
-
-		// Resolve system-ip → device info
-		dev, err := findDevice(apiClient, systemIP)
-		if err != nil {
-			log.Printf("Device lookup error: %v", err)
-			middleware.WriteError(w, http.StatusBadGateway, "VMANAGE_ERROR", "Failed to look up device")
-			return
-		}
+		dev := requireDevice(apiClient, w, systemIP)
 		if dev == nil {
-			middleware.WriteError(w, http.StatusNotFound, "NOT_FOUND",
-				fmt.Sprintf("No device found with system-ip %s", systemIP))
-			return
+			return // Error already written
 		}
 
 		// Per Cisco API docs, deviceId parameter is the device's system-ip

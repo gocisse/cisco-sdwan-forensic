@@ -18,21 +18,9 @@ import (
 func FetchDeviceConfig(apiClient *utils.APIClient) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		systemIP := mux.Vars(r)["system-ip"]
-		if systemIP == "" {
-			middleware.WriteError(w, http.StatusBadRequest, "MISSING_PARAM", "Missing 'system-ip' path parameter")
-			return
-		}
-
-		dev, err := findDevice(apiClient, systemIP)
-		if err != nil {
-			log.Printf("Device lookup error: %v", err)
-			middleware.WriteError(w, http.StatusBadGateway, "VMANAGE_ERROR", "Failed to look up device")
-			return
-		}
+		dev := requireDevice(apiClient, w, systemIP)
 		if dev == nil {
-			middleware.WriteError(w, http.StatusNotFound, "NOT_FOUND",
-				fmt.Sprintf("No device found with system-ip %s", systemIP))
-			return
+			return // Error already written
 		}
 
 		deviceID := dev.UUID
@@ -41,7 +29,7 @@ func FetchDeviceConfig(apiClient *utils.APIClient) http.HandlerFunc {
 		}
 
 		fullEndpoint := fmt.Sprintf("dataservice/template/device/config/%s", deviceID)
-		log.Printf("🔧 Running config: system-ip=%s → deviceId=%s", systemIP, deviceID)
+		log.Printf("Running config: system-ip=%s → deviceId=%s", systemIP, deviceID)
 
 		rawData, err := apiClient.Get(fullEndpoint)
 		if err != nil {

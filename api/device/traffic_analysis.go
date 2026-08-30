@@ -102,21 +102,9 @@ type TunnelHealthResponse struct {
 func FetchAppRoute(apiClient *utils.APIClient) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		systemIP := mux.Vars(r)["system-ip"]
-		if systemIP == "" {
-			middleware.WriteError(w, http.StatusBadRequest, "MISSING_PARAM", "Missing 'system-ip' path parameter")
-			return
-		}
-
-		dev, err := findDevice(apiClient, systemIP)
-		if err != nil {
-			log.Printf("Device lookup error: %v", err)
-			middleware.WriteError(w, http.StatusBadGateway, "VMANAGE_ERROR", "Failed to look up device")
-			return
-		}
+		dev := requireDevice(apiClient, w, systemIP)
 		if dev == nil {
-			middleware.WriteError(w, http.StatusNotFound, "NOT_FOUND",
-				fmt.Sprintf("No device found with system-ip %s", systemIP))
-			return
+			return // Error already written
 		}
 
 		// vManage requires the device UUID, not the system-ip
@@ -124,7 +112,7 @@ func FetchAppRoute(apiClient *utils.APIClient) http.HandlerFunc {
 		if deviceID == "" {
 			deviceID = systemIP // fallback for older vManage versions
 		}
-		log.Printf("📡 App-route: system-ip=%s → deviceId=%s", systemIP, deviceID)
+		log.Printf("App-route: system-ip=%s → deviceId=%s", systemIP, deviceID)
 
 		fullEndpoint := fmt.Sprintf("dataservice/device/app-route/statistics?deviceId=%s", deviceID)
 		log.Printf("📡 Full endpoint: %s", fullEndpoint)
@@ -229,21 +217,9 @@ func FetchAppRoute(apiClient *utils.APIClient) http.HandlerFunc {
 func FetchTunnelHealth(apiClient *utils.APIClient) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		systemIP := mux.Vars(r)["system-ip"]
-		if systemIP == "" {
-			middleware.WriteError(w, http.StatusBadRequest, "MISSING_PARAM", "Missing 'system-ip' path parameter")
-			return
-		}
-
-		dev, err := findDevice(apiClient, systemIP)
-		if err != nil {
-			log.Printf("Device lookup error: %v", err)
-			middleware.WriteError(w, http.StatusBadGateway, "VMANAGE_ERROR", "Failed to look up device")
-			return
-		}
+		dev := requireDevice(apiClient, w, systemIP)
 		if dev == nil {
-			middleware.WriteError(w, http.StatusNotFound, "NOT_FOUND",
-				fmt.Sprintf("No device found with system-ip %s", systemIP))
-			return
+			return // Error already written
 		}
 
 		// vManage requires the device UUID, not the system-ip
@@ -251,7 +227,7 @@ func FetchTunnelHealth(apiClient *utils.APIClient) http.HandlerFunc {
 		if deviceID == "" {
 			deviceID = systemIP // fallback for older vManage versions
 		}
-		log.Printf("📡 Tunnel health: system-ip=%s → deviceId=%s", systemIP, deviceID)
+		log.Printf("Tunnel health: system-ip=%s → deviceId=%s", systemIP, deviceID)
 
 		rawData, err := apiClient.Get(fmt.Sprintf("dataservice/device/tunnel/statistics?deviceId=%s", deviceID))
 		if err != nil {

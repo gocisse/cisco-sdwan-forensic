@@ -3,6 +3,8 @@ package realtime
 import (
 	"encoding/json"
 	"net/http"
+
+	"sdwan-app/middleware"
 	"sdwan-app/utils"
 
 	"github.com/gorilla/mux"
@@ -11,30 +13,27 @@ import (
 // FetchReceivedRoutes retrieves and filters received OMP routes for a device
 func FetchReceivedRoutes(apiClient *utils.APIClient) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		params := mux.Vars(r)
-		systemIP := params["system-ip"]
-
-		// Fetch raw JSON data from API
-		rawData, err := apiClient.Get("dataservice/device/omp/routes/received?deviceId=" + systemIP)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+		systemIP := mux.Vars(r)["system-ip"]
+		if systemIP == "" {
+			middleware.WriteError(w, http.StatusBadRequest, "MISSING_PARAM", "Missing 'system-ip' path parameter")
 			return
 		}
 
-		// Assume API response is wrapped inside a "data" field:
-		// { "data": [ {...}, {...} ] }
+		rawData, err := apiClient.Get("dataservice/device/omp/routes/received?deviceId=" + systemIP)
+		if err != nil {
+			middleware.WriteError(w, http.StatusBadGateway, "VMANAGE_ERROR", "Failed to fetch received routes from vManage")
+			return
+		}
+
 		var response struct {
 			Data []Routes `json:"data"`
 		}
 
-		// Parse raw JSON response into Routes struct
 		if err := json.Unmarshal(rawData, &response); err != nil {
-			http.Error(w, "Failed to parse JSON response", http.StatusInternalServerError)
+			middleware.WriteError(w, http.StatusInternalServerError, "PARSE_ERROR", "Failed to parse routes response")
 			return
 		}
 
-		// Convert filtered data back to JSON and send response
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(response.Data)
+		middleware.RespondJSON(w, http.StatusOK, response.Data)
 	}
 }
